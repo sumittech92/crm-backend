@@ -6,7 +6,7 @@ import AuthModel, { type UserRole } from "../../model/Auth/auth.js";
 const scrypt = promisify(scryptCallback);
 
 export class AuthClass {
-  static async create({ fullName, email, password, countryCode, phoneNumber, role = "student" }: { fullName: string; email: string; password: string; countryCode: string; phoneNumber: string; role?: UserRole }) {
+  static async create({ fullName, email, password, countryCode, phoneNumber, role = "student", workType }: { fullName: string; email: string; password: string; countryCode: string; phoneNumber: string; role?: UserRole; workType?: "school" | "coaching" }) {
     const user = await AuthModel.create({
       fullName: fullName.trim(),
       email: email.trim().toLowerCase(),
@@ -14,6 +14,7 @@ export class AuthClass {
       countryCode: countryCode.trim(),
       phoneNumber: phoneNumber.trim(),
       role,
+      workType: role === "admin" ? workType : null,
     });
     const result = user.toObject();
     delete result.password;

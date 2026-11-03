@@ -2,6 +2,8 @@
 import mongoose from "mongoose";
 
 export interface StudentDocument extends mongoose.Document {
+    studentCode: string;
+    workType: "school" | "coaching";
     studentId: mongoose.Types.ObjectId;
     fullName: string | null;
     profileImage: string | null;
@@ -45,6 +47,17 @@ export interface StudentDocument extends mongoose.Document {
 
 const studentDetailsSchema = new mongoose.Schema<StudentDocument>(
     {
+        workType: {
+            type: String,
+            enum: ["school", "coaching"],
+            required: true,
+        },
+        studentCode: {
+            type: String,
+            required: true,
+            match: /^\d{6}$/,
+            unique: true,
+        },
         studentId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Auth",

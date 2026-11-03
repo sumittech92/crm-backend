@@ -8,7 +8,7 @@ export const registerSchema = Joi.object({
   password: Joi.string().min(8).required(),
   countryCode: Joi.string().trim().required(),
   phoneNumber: Joi.string().trim().required(),
-  workType: Joi.string().trim().optional(),
+  workType: Joi.string().valid("school", "coaching").optional(),
 }).required();
 
 export const loginSchema = Joi.object({

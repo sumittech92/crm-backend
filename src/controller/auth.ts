@@ -12,6 +12,9 @@ const normalizePhone = (countryCode: string, phoneNumber: string) => `${countryC
 const createAccount = async (req, res, role: "student" | "admin" | "superAdmin", message: string) => {
   try {
     const { fullName, email, password, countryCode, phoneNumber, workType } = req.body;
+    if (role === "admin" && !["school", "coaching"].includes(workType)) {
+      return sendErrorResponse(res, "Work type must be school or coaching", HttpStatus.BAD_REQUEST);
+    }
     const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = phoneNumber.trim();
     if (await AuthModel.exists({ email: normalizedEmail, isDeleted: false })) {

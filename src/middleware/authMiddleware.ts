@@ -80,3 +80,21 @@ export const requireAdmin = (req, res, next) => {
   }
   return next();
 };
+
+export const requireMatchingWorkType = (req, res, next) => {
+  if (req.role !== "admin") return next();
+  const workType = req.userData?.workType;
+  if (workType !== "school" && workType !== "coaching") {
+    return res.status(403).json({ auth: false, message: "Admin work type is not configured" });
+  }
+
+  const allowedInfo = workType === "school" ? "schoolInfo" : "coachingInfo";
+  const blockedInfo = workType === "school" ? "coachingInfo" : "schoolInfo";
+  if (req.body?.[blockedInfo] !== undefined) {
+    return res.status(403).json({ auth: false, message: `A ${workType} admin can only manage ${workType} records` });
+  }
+  if (req.method === "POST" && req.body?.[allowedInfo] === undefined) {
+    return res.status(400).json({ auth: false, message: `${allowedInfo} is required for this admin work type` });
+  }
+  return next();
+};

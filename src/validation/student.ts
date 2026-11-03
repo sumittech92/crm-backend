@@ -2,7 +2,7 @@ import Joi from "joi";
 import HttpStatus from "http-status-codes";
 import { sendErrorResponse } from "../utilis/response.js";
 
-const createStudentSchema = Joi.object({
+const studentFieldsSchema = Joi.object({
   fullName: Joi.string().trim().required(),
   email: Joi.string().trim().email().required(),
   countryCode: Joi.string().trim().required(),
@@ -41,10 +41,17 @@ const createStudentSchema = Joi.object({
     schoolName: Joi.string().trim().allow("", null).optional(),
     board: Joi.string().trim().allow("", null).optional(),
   }).optional(),
-}).required();
+});
 
-export const validateCreateStudent = (req, res, next) => {
-  const { error, value } = createStudentSchema.validate(req.body ?? {}, {
+const createStudentSchema = studentFieldsSchema.xor("schoolInfo", "coachingInfo").required();
+
+const updateStudentSchema = studentFieldsSchema
+  .fork(["fullName", "email", "countryCode", "phoneNumber", "password"], (schema) => schema.optional())
+  .fork(["password"], (schema) => schema.forbidden())
+  .min(1);
+
+const validateWithSchema = (schema, req, res, next) => {
+  const { error, value } = schema.validate(req.body ?? {}, {
     abortEarly: false,
     stripUnknown: true,
   });
@@ -58,3 +65,10 @@ export const validateCreateStudent = (req, res, next) => {
   req.body = value;
   return next();
 };
+
+export const validateCreateStudent = (req, res, next) => {
+  return validateWithSchema(createStudentSchema, req, res, next);
+};
+
+export const validateUpdateStudent = (req, res, next) =>
+  validateWithSchema(updateStudentSchema, req, res, next);

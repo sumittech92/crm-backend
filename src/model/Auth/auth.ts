@@ -5,7 +5,7 @@ export const workRoles = ["school", "coaching"] as const;
 export type UserRole = (typeof userRoles)[number];
 export interface AuthDocument extends mongoose.Document {
   fullName: string | null; email: string | null; password: string | null; countryCode: string | null; phoneNumber: string | null;
-  role: UserRole | null; deviceToken: string | null; accessToken: string | null; isDeleted: boolean; isBlocked: boolean; lastLogin: number;
+  role: UserRole | null; workType: "school" | "coaching" | null; deviceToken: string | null; accessToken: string | null; isDeleted: boolean; isBlocked: boolean; lastLogin: number;
   otpHash?: string | null; otpExpiresAt?: Date | null; otpVerifiedAt?: Date | null;
 }
 
