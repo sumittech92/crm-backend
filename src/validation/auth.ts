@@ -9,6 +9,7 @@ export const registerSchema = Joi.object({
   countryCode: Joi.string().trim().required(),
   phoneNumber: Joi.string().trim().required(),
   workType: Joi.string().valid("school", "coaching").optional(),
+  instituteName: Joi.string().trim().max(100).allow("", null).optional(),
 }).required();
 
 export const loginSchema = Joi.object({
@@ -35,6 +36,20 @@ export const resetPasswordSchema = Joi.object({
   }),
 }).required();
 
+export const changePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required(),
+  newPassword: Joi.string().min(8).invalid(Joi.ref("currentPassword")).required().messages({
+    "any.invalid": "New password must be different from the current password",
+  }),
+  confirmPassword: Joi.string().valid(Joi.ref("newPassword")).required().messages({
+    "any.only": "Confirm password must match new password",
+  }),
+}).required();
+
+export const blockUserSchema = Joi.object({
+  isBlocked: Joi.boolean().required(),
+}).required();
+
 const validate = (schema) => (req, res, next) => {
   const { error, value } = schema.validate(req.body ?? {}, {
     abortEarly: false,
@@ -56,6 +71,13 @@ export const validateLogin = validate(loginSchema);
 export const validateForgotPassword = validate(forgotPasswordSchema);
 export const validateResetPassword = validate(resetPasswordSchema);
 export const validateOtp = validate(verifyOtpSchema);
+export const validateChangePassword = validate(changePasswordSchema);
+export const validateBlockUser = validate(blockUserSchema);
+
+export const domainSchema = Joi.object({
+  customDomain: Joi.string().trim().max(253).allow("", null).required(),
+}).required();
+export const validateDomain = validate(domainSchema);
 
 
 

@@ -5,6 +5,7 @@ export interface StudentDocument extends mongoose.Document {
     studentCode: string;
     workType: "school" | "coaching";
     studentId: mongoose.Types.ObjectId;
+    adminId: mongoose.Types.ObjectId | null;
     fullName: string | null;
     profileImage: string | null;
     gender: "male" | "female" | null;
@@ -62,6 +63,13 @@ const studentDetailsSchema = new mongoose.Schema<StudentDocument>(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Auth",
             required: true,
+        },
+        // Owner (admin) who created this student; owners only see their own students.
+        adminId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Auth",
+            default: null,
+            index: true,
         },
 
         fullName: {

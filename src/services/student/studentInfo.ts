@@ -4,9 +4,10 @@ import AuthModel from "../../model/Auth/auth.js";
 import StudentDetailsModel from "../../model/students/studentInfo.js";
 import { AuthClass } from "../Auth/auth.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
+import type { OwnerScope } from "../teacher/teacherInfo.js";
 
 export class StudentInfoService {
-  static async createStudent(input: Record<string, any>, workType?: "school" | "coaching") {
+  static async createStudent(input: Record<string, any>, workType?: "school" | "coaching", adminId?: unknown) {
     workType ??= input.schoolInfo && !input.coachingInfo ? "school" : input.coachingInfo && !input.schoolInfo ? "coaching" : undefined;
     if (!workType || (workType === "school" && (!input.schoolInfo || input.coachingInfo)) || (workType === "coaching" && (!input.coachingInfo || input.schoolInfo))) {
       throw new Error("Student data must match the admin work type");
@@ -32,6 +33,7 @@ export class StudentInfoService {
       phoneNumber,
       password: await AuthClass.hashSecret(input.password),
       role: "student",
+      workType,
     });
 
     try {
@@ -42,6 +44,7 @@ export class StudentInfoService {
             workType,
             studentCode: generateSixDigitId(),
             studentId: auth._id,
+            adminId: adminId ?? null,
             fullName: input.fullName.trim(),
             profileImage: input.profileImage,
             gender: input.gender,
@@ -64,28 +67,28 @@ export class StudentInfoService {
     }
   }
 
-  static async getStudentById(studentId: string, workType?: string) {
-    const student = await this.findStudentByIdentifier(studentId, workType);
+  static async getStudentById(studentId: string, scope: OwnerScope = {}) {
+    const student = await this.findStudentByIdentifier(studentId, scope);
     if (!student) throw new Error("Student not found");
     return student;
   }
 
-  private static async findStudentByIdentifier(identifier: string, workType?: string) {
-    const scope = workType ? { workType } : {};
+  private static async findStudentByIdentifier(identifier: string, scope: OwnerScope = {}) {
     if (/^\d{6}$/.test(identifier)) return StudentDetailsModel.findOne({ studentCode: identifier, ...scope });
     if (!mongoose.Types.ObjectId.isValid(identifier)) throw new Error("Invalid Student ID");
     return StudentDetailsModel.findOne({ studentId: identifier, ...scope });
   }
 
-  static async getAllStudents(workType?: string) {
-    return StudentDetailsModel.find(workType ? { workType } : {}).sort({ createdAt: -1 });
+  static async getAllStudents(scope: OwnerScope = {}) {
+    return StudentDetailsModel.find(scope).sort({ createdAt: -1 });
   }
 
-  static async updateStudent(studentId: string, input: Record<string, any>, workType?: string) {
+  static async updateStudent(studentId: string, input: Record<string, any>, scope: OwnerScope = {}) {
+    const { workType } = scope;
     if (workType && ((workType === "school" && input.coachingInfo !== undefined) || (workType === "coaching" && input.schoolInfo !== undefined))) {
       throw new Error("Student data must match the admin work type");
     }
-    const existingStudent = await this.findStudentByIdentifier(studentId, workType);
+    const existingStudent = await this.findStudentByIdentifier(studentId, scope);
     if (!existingStudent) throw new Error("Student not found");
     const authId = existingStudent.studentId.toString();
     const profileFields = ["fullName", "profileImage", "gender", "parentsInfo", "address", "schoolInfo", "coachingInfo"];
@@ -123,8 +126,8 @@ export class StudentInfoService {
     return student;
   }
 
-  static async deleteStudent(studentId: string, workType?: string) {
-    const existingStudent = await this.findStudentByIdentifier(studentId, workType);
+  static async deleteStudent(studentId: string, scope: OwnerScope = {}) {
+    const existingStudent = await this.findStudentByIdentifier(studentId, scope);
     if (!existingStudent) throw new Error("Student not found");
     const student = await StudentDetailsModel.findByIdAndDelete(existingStudent._id);
     if (!student) throw new Error("Student not found");

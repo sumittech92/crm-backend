@@ -1,8 +1,10 @@
 import jwt from "jsonwebtoken";
-import { AuthClass } from "../services/Auth/auth.js";
+import mongoose from "mongoose";
+import { AuthClass, MAX_FAILED_LOGINS } from "../services/Auth/auth.js";
 import AuthModel from "../model/Auth/auth.js";
 import { sendErrorResponse, sendSuccessResponse } from "../utilis/response.js";
 import HttpStatus from "http-status-codes";
+import { isValidDomain, normalizeDomain } from "../utilis/domain.js";
 
 const allowedRoles = ["superAdmin", "admin", "teacher", "student", "parent"];
 
@@ -11,7 +13,7 @@ const normalizePhone = (countryCode: string, phoneNumber: string) => `${countryC
 
 const createAccount = async (req, res, role: "student" | "admin" | "superAdmin", message: string) => {
   try {
-    const { fullName, email, password, countryCode, phoneNumber, workType } = req.body;
+    const { fullName, email, password, countryCode, phoneNumber, workType, instituteName } = req.body;
     if (role === "admin" && !["school", "coaching"].includes(workType)) {
       return sendErrorResponse(res, "Work type must be school or coaching", HttpStatus.BAD_REQUEST);
     }
@@ -25,7 +27,7 @@ const createAccount = async (req, res, role: "student" | "admin" | "superAdmin",
     }
     const user = await AuthClass.create({
       fullName, email: normalizedEmail, password: await AuthClass.hashSecret(password),
-      countryCode, phoneNumber: normalizedPhone, role, workType,
+      countryCode, phoneNumber: normalizedPhone, role, workType, instituteName,
     });
     return sendSuccessResponse(res, message, user, HttpStatus.CREATED);
   } catch (error) {
@@ -64,11 +66,24 @@ export const login = async (req, res) => {
   try {
     const { email, phoneNumber, countryCode, password } = req.body;
     const user = await AuthClass.findForLogin({ email, phoneNumber, countryCode });
-    if (!user || !(await AuthClass.verifySecret(password, user.password))) {
+    if (!user) {
       return sendErrorResponse(res, "Invalid email/phone number or password", HttpStatus.UNAUTHORIZED);
     }
     if (user.isBlocked) {
       return sendErrorResponse(res, "Your account is blocked by Admin", HttpStatus.FORBIDDEN);
+    }
+    if (!(await AuthClass.verifySecret(password, user.password))) {
+      // Super admins are never locked out: nobody could unblock them.
+      if (user.role === "superAdmin") {
+        return sendErrorResponse(res, "Invalid email/phone number or password", HttpStatus.UNAUTHORIZED);
+      }
+      const attempts = await AuthClass.recordFailedLogin(user._id);
+      if (attempts >= MAX_FAILED_LOGINS) {
+        return sendErrorResponse(res, "Your account is blocked after too many wrong passwords. Contact the Super Admin to unblock it.", HttpStatus.FORBIDDEN);
+      }
+      const left = MAX_FAILED_LOGINS - attempts;
+      const warning = left <= 3 ? ` ${left} attempt${left === 1 ? "" : "s"} left before your account is blocked.` : "";
+      return sendErrorResponse(res, `Invalid email/phone number or password.${warning}`, HttpStatus.UNAUTHORIZED);
     }
     if (!allowedRoles.includes(user.role)) {
       return sendErrorResponse(res, "Invalid user role", HttpStatus.FORBIDDEN);
@@ -83,7 +98,7 @@ export const login = async (req, res) => {
       { expiresIn: "1d" },
     );
     await AuthClass.updateAccessToken(user._id, accessToken);
-    const safeUser = { ...user };
+    const safeUser = { ...user, workType: await AuthClass.resolveWorkType(user), siteSlug: await AuthClass.ensureSiteSlug(user), failedLoginAttempts: 0 };
     delete safeUser.password;
     delete safeUser.accessToken;
     return sendSuccessResponse(res, "Login successful", { user: safeUser, accessToken });
@@ -205,6 +220,68 @@ export const resetPassword = async (req, res) => {
   }
 };
 
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!(await AuthClass.changePassword(req.userData._id, currentPassword, newPassword))) {
+      return sendErrorResponse(res, "Current password is incorrect", HttpStatus.BAD_REQUEST);
+    }
+    return sendSuccessResponse(res, "Password changed successfully", {});
+  } catch (error) {
+    console.error("Change password error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};
+
+export const listUsers = async (req, res) => {
+  try {
+    const users = await AuthClass.listUsers({
+      role: req.query.role as string | undefined,
+      status: req.query.status as string | undefined,
+      search: req.query.search as string | undefined,
+    });
+    return sendSuccessResponse(res, "Users retrieved successfully", users);
+  } catch (error) {
+    console.error("User list error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};
+
+export const setUserBlocked = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return sendErrorResponse(res, "Invalid user ID", HttpStatus.BAD_REQUEST);
+    }
+    const user = await AuthClass.setBlocked(req.params.userId, req.body.isBlocked);
+    if (!user) return sendErrorResponse(res, "User not found", HttpStatus.NOT_FOUND);
+    return sendSuccessResponse(res, req.body.isBlocked ? "User blocked" : "User unblocked", user);
+  } catch (error) {
+    console.error("User block error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};
+
+export const setUserDomain = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return sendErrorResponse(res, "Invalid user ID", HttpStatus.BAD_REQUEST);
+    }
+    const customDomain = normalizeDomain(req.body.customDomain);
+    if (customDomain && !isValidDomain(customDomain)) {
+      return sendErrorResponse(res, "Enter a valid domain, e.g. sunriseclasses.in", HttpStatus.BAD_REQUEST);
+    }
+    const user = await AuthClass.setCustomDomain(req.params.userId, customDomain);
+    if (!user) return sendErrorResponse(res, "Owner not found", HttpStatus.NOT_FOUND);
+    return sendSuccessResponse(res, customDomain ? "Website domain saved" : "Website domain removed", user);
+  } catch (error) {
+    if (error.statusCode === HttpStatus.CONFLICT || error.code === 11000) {
+      return sendErrorResponse(res, "This domain is already used by another institute", HttpStatus.CONFLICT);
+    }
+    console.error("User domain error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};
+
 export const logout = async (req, res) => {
   try {
     await AuthClass.clearAccessToken(req.userData._id);
@@ -222,3 +299,15 @@ export const logout = async (req, res) => {
 
 
 
+
+// The signed-in owner's public website address, for the Website page's preview / share link.
+export const getMySite = async (req, res) => {
+  try {
+    if (req.role !== "admin") return sendErrorResponse(res, "Only an Owner has a public website", HttpStatus.FORBIDDEN);
+    const siteSlug = await AuthClass.ensureSiteSlug(req.userData);
+    return sendSuccessResponse(res, "Website retrieved successfully", { siteSlug, instituteName: req.userData.instituteName || req.userData.fullName, workType: req.userData.workType });
+  } catch (error) {
+    console.error("Website lookup error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};

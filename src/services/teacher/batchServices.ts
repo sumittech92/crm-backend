@@ -1,6 +1,5 @@
 
 import mongoose from "mongoose";
-import Batch from "../models/batch.model";
 import Batch from "../../model/teacher/batchModel.js"
 interface CreateBatchInput {
     batchName: string;

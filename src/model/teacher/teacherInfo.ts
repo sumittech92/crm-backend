@@ -4,12 +4,13 @@ export interface TeacherDocument extends mongoose.Document {
     teacherCode: string;
     workType: "school" | "coaching";
     teacherId: Types.ObjectId;
+    adminId: Types.ObjectId | null;
     fullName: string | null;
     email: string | null;
     countryCode: string | null;
     phoneNumber: string | null;
     joiningDate: Date | null;
-    status: "active" | "inactive" | "pending";
+    status: "active" | "inactive" | "pending" | "onLeave";
     profileImage: string | null;
     gender: "male" | "female" | null;
 
@@ -48,6 +49,13 @@ const teacherSchema = new Schema<TeacherDocument>(
             ref: "Auth",
             required: true,
         },
+        // Owner (admin) who created this teacher; owners only see their own teachers.
+        adminId: {
+            type: Schema.Types.ObjectId,
+            ref: "Auth",
+            default: null,
+            index: true,
+        },
 
         fullName: {
             type: String,
@@ -81,7 +89,7 @@ const teacherSchema = new Schema<TeacherDocument>(
 
         status: {
             type: String,
-            enum: ["active", "inactive", "pending"],
+            enum: ["active", "inactive", "pending", "onLeave"],
             default: "pending",
         },
 

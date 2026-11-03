@@ -5,9 +5,12 @@ import Teacher from "../../model/teacher/teacherInfo.js";
 import { AuthClass } from "../Auth/auth.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
 
+/** Limits an admin to records of their own work type that they created. Empty for super admins. */
+export type OwnerScope = { workType?: string; adminId?: unknown };
+
 export class TeacherInfoService {
   
-  static async createTeacher( input: Record<string, any>, workType?: "school" | "coaching") {
+  static async createTeacher( input: Record<string, any>, workType?: "school" | "coaching", adminId?: unknown) {
     // 1. Resolve and validate work type
     workType ??=
       input.schoolInfo && !input.coachingInfo ? "school" : input.coachingInfo && !input.schoolInfo? "coaching": undefined;
@@ -60,6 +63,7 @@ export class TeacherInfoService {
       phoneNumber,
       password: await AuthClass.hashSecret(input.password),
       role: "teacher",
+      workType,
     });
 
     try {
@@ -75,6 +79,7 @@ export class TeacherInfoService {
             workType,
             teacherCode,
             teacherId: auth._id,
+            adminId: adminId ?? null,
 
             fullName,
             email,
@@ -133,58 +138,58 @@ export class TeacherInfoService {
     }
   }
 
-  
-  static async getTeacherById(teacherId: string, workType?: string) {
-    const teacher = await this.findTeacherByIdentifier(teacherId, workType);
+  static async getTeacherById(teacherId: string, scope: OwnerScope = {}) {
+    const teacher = await this.findTeacherByIdentifier(teacherId, scope);
     if (!teacher) throw new Error("Teacher not found");
     return teacher;
   }
 
-  static async findTeacherByIdentifier(identifier: string) {
-  const value = String(identifier ?? "").trim();
-
-  if (!value) {
-    throw new Error("Teacher ID is required");
+  // Accepts the generated teacher code ("483921") or the profile's MongoDB _id.
+  // An admin only sees teachers of their own work type that they created.
+  private static async findTeacherByIdentifier(identifier: string, scope: OwnerScope = {}) {
+    const value = String(identifier ?? "").trim();
+    if (/^\d{6}$/.test(value)) return Teacher.findOne({ teacherCode: value, ...scope });
+    if (!mongoose.Types.ObjectId.isValid(value)) throw new Error("Invalid Teacher ID");
+    return Teacher.findOne({ _id: value, ...scope });
   }
 
-  let teacher = null;
-
-  // Generated teacher ID, e.g. "483921"
-  if (/^\d{6}$/.test(value)) {
-    teacher = await Teacher.findOne({ teacherCode: value });
+  static async getAllTeachers(scope: OwnerScope = {}) {
+    return Teacher.find(scope).sort({ createdAt: -1 });
   }
 
-  // MongoDB document ID, e.g. "671a1234567890abcdef1234"
-  else if (/^[a-fA-F0-9]{24}$/.test(value)) {
-    teacher = await Teacher.findById(value);
-  } else {
-    throw new Error("Invalid Teacher ID");
-  }
-
-  if (!teacher) {
-    throw new Error("Teacher not found");
-  }
-
-  return teacher;
-}
-
-static async getTeacherById(identifier: string) {
-  return this.findTeacherByIdentifier(identifier);
-}
-
-  static async getAllTeachers(workType?: string) {
-    return Teacher.find(workType ? { workType } : {}).sort({ createdAt: -1 });
-  }
-
-  static async updateTeacher(teacherId: string, input: Record<string, any>, workType?: string) {
+  static async updateTeacher(teacherId: string, input: Record<string, any>, scope: OwnerScope = {}) {
+    const { workType } = scope;
     if (workType && ((workType === "school" && input.coachingInfo !== undefined) || (workType === "coaching" && input.schoolInfo !== undefined))) {
       throw new Error("Teacher data must match the admin work type");
     }
-    const existingTeacher = await this.findTeacherByIdentifier(teacherId, workType);
+    const existingTeacher = await this.findTeacherByIdentifier(teacherId, scope);
     if (!existingTeacher) throw new Error("Teacher not found");
     const authId = existingTeacher.teacherId.toString();
-    const allowedFields = ["fullName", "email", "countryCode", "phoneNumber", "joiningDate", "status", "profileImage", "gender", "schoolInfo", "coachingInfo"];
-    const updateData: Record<string, any> = {};
+
+    const accountUpdate: Record<string, any> = {};
+    for (const field of ["fullName", "email", "countryCode", "phoneNumber"]) {
+      if (input[field] !== undefined) accountUpdate[field] = field === "email" ? input[field].trim().toLowerCase() : input[field].trim();
+    }
+    if (Object.keys(accountUpdate).length) {
+      const duplicateConditions = [];
+      if (accountUpdate.email) duplicateConditions.push({ email: accountUpdate.email });
+      if (accountUpdate.countryCode || accountUpdate.phoneNumber) {
+        duplicateConditions.push({
+          countryCode: accountUpdate.countryCode ?? existingTeacher.countryCode,
+          phoneNumber: accountUpdate.phoneNumber ?? existingTeacher.phoneNumber,
+        });
+      }
+      if (duplicateConditions.length && await AuthModel.exists({
+        _id: { $ne: authId }, isDeleted: false, $or: duplicateConditions,
+      })) {
+        const error = new Error("Email or phone number already exists") as Error & { statusCode?: number };
+        error.statusCode = HttpStatus.CONFLICT;
+        throw error;
+      }
+    }
+
+    const allowedFields = ["joiningDate", "status", "profileImage", "gender", "schoolInfo", "coachingInfo"];
+    const updateData: Record<string, any> = { ...accountUpdate };
     for (const field of allowedFields) {
       if (input[field] !== undefined) updateData[field] = input[field];
     }
@@ -197,25 +202,18 @@ static async getTeacherById(identifier: string) {
     }
     const teacher = await Teacher.findByIdAndUpdate(existingTeacher._id, { $set: updateData }, { new: true, runValidators: true });
     if (!teacher) throw new Error("Teacher not found");
-    if (input.fullName !== undefined || input.email !== undefined || input.countryCode !== undefined || input.phoneNumber !== undefined) {
-      await AuthModel.updateOne({ _id: authId }, {
-        $set: {
-          ...(input.fullName !== undefined && { fullName: input.fullName }),
-          ...(input.email !== undefined && { email: input.email }),
-          ...(input.countryCode !== undefined && { countryCode: input.countryCode }),
-          ...(input.phoneNumber !== undefined && { phoneNumber: input.phoneNumber }),
-        }
-      });
+    if (Object.keys(accountUpdate).length) {
+      await AuthModel.updateOne({ _id: authId, role: "teacher", isDeleted: false }, { $set: accountUpdate });
     }
     return teacher;
   }
 
-  static async deleteTeacher(teacherId: string, workType?: string) {
-    const existingTeacher = await this.findTeacherByIdentifier(teacherId, workType);
+  static async deleteTeacher(teacherId: string, scope: OwnerScope = {}) {
+    const existingTeacher = await this.findTeacherByIdentifier(teacherId, scope);
     if (!existingTeacher) throw new Error("Teacher not found");
     const teacher = await Teacher.findByIdAndDelete(existingTeacher._id);
     if (!teacher) throw new Error("Teacher not found");
-    await AuthModel.updateOne({ _id: existingTeacher.teacherId }, { $set: { isDeleted: true, accessToken: null } });
+    await AuthModel.updateOne({ _id: existingTeacher.teacherId, role: "teacher" }, { $set: { isDeleted: true, accessToken: null } });
     return { message: "Teacher deleted successfully", teacher };
   }
 }

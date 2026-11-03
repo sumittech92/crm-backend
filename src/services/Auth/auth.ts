@@ -2,11 +2,21 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:cry
 import { promisify } from "node:util";
 import axios from "axios";
 import AuthModel, { type UserRole } from "../../model/Auth/auth.js";
+import Teacher from "../../model/teacher/teacherInfo.js";
+import StudentDetailsModel from "../../model/students/studentInfo.js";
+
+export const MAX_FAILED_LOGINS = 8;
+// Safe account fields for the Super Admin users page.
+const USER_LIST_FIELDS = "fullName email countryCode phoneNumber role workType instituteName siteSlug customDomain isBlocked failedLoginAttempts createdAt lastLogin";
+// The demo websites keep these addresses; real owners never get them.
+const RESERVED_SITE_SLUGS = ["northstar-academy", "greenfield-school"];
+
+const slugify = (value: string) => value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50).replace(/-+$/, "") || "institute";
 
 const scrypt = promisify(scryptCallback);
 
 export class AuthClass {
-  static async create({ fullName, email, password, countryCode, phoneNumber, role = "student", workType }: { fullName: string; email: string; password: string; countryCode: string; phoneNumber: string; role?: UserRole; workType?: "school" | "coaching" }) {
+  static async create({ fullName, email, password, countryCode, phoneNumber, role = "student", workType, instituteName }: { fullName: string; email: string; password: string; countryCode: string; phoneNumber: string; role?: UserRole; workType?: "school" | "coaching"; instituteName?: string }) {
     const user = await AuthModel.create({
       fullName: fullName.trim(),
       email: email.trim().toLowerCase(),
@@ -15,9 +25,11 @@ export class AuthClass {
       phoneNumber: phoneNumber.trim(),
       role,
       workType: role === "admin" ? workType : null,
+      instituteName: role === "admin" ? instituteName?.trim() || null : null,
     });
     const result = user.toObject();
     delete result.password;
+    if (role === "admin") result.siteSlug = await this.ensureSiteSlug(result);
     return result;
   }
 
@@ -33,7 +45,94 @@ export class AuthClass {
   }
 
   static async updateAccessToken(userId: unknown, accessToken: string) {
-    return AuthModel.updateOne({ _id: userId }, { $set: { accessToken, lastLogin: Date.now() } });
+    return AuthModel.updateOne({ _id: userId }, { $set: { accessToken, lastLogin: Date.now(), failedLoginAttempts: 0 } });
+  }
+
+  /** Counts a wrong password and blocks the account on the MAX_FAILED_LOGINS-th one in a row. Returns the new count. */
+  static async recordFailedLogin(userId: unknown) {
+    const user = await AuthModel.findOneAndUpdate(
+      { _id: userId },
+      { $inc: { failedLoginAttempts: 1 } },
+      { new: true },
+    ).select("failedLoginAttempts").lean();
+    const attempts = user?.failedLoginAttempts ?? 0;
+    if (attempts >= MAX_FAILED_LOGINS) {
+      await AuthModel.updateOne({ _id: userId }, { $set: { isBlocked: true, accessToken: null } });
+    }
+    return attempts;
+  }
+
+  /** Teachers and students made before work types were stored on the account take it from their profile. */
+  static async resolveWorkType(user: { _id: unknown; role?: string | null; workType?: string | null }) {
+    if (user.workType || (user.role !== "teacher" && user.role !== "student")) return user.workType ?? null;
+    const profile = user.role === "teacher"
+      ? await Teacher.findOne({ teacherId: user._id }).select("workType").lean()
+      : await StudentDetailsModel.findOne({ studentId: user._id }).select("workType").lean();
+    if (!profile?.workType) return null;
+    await AuthModel.updateOne({ _id: user._id }, { $set: { workType: profile.workType } });
+    return profile.workType;
+  }
+
+  /** Gives an owner a unique public website address made from the institute name (or their own name). */
+  static async ensureSiteSlug(user: { _id: unknown; role?: string | null; siteSlug?: string | null; instituteName?: string | null; fullName?: string | null }) {
+    if (user.role !== "admin") return null;
+    if (user.siteSlug) return user.siteSlug;
+    const base = slugify(user.instituteName || user.fullName || "");
+    for (let n = 1; n <= 50; n++) {
+      const siteSlug = n === 1 ? base : `${base}-${n}`;
+      if (RESERVED_SITE_SLUGS.includes(siteSlug) || await AuthModel.exists({ siteSlug })) continue;
+      try {
+        const updated = await AuthModel.findOneAndUpdate({ _id: user._id, siteSlug: null }, { $set: { siteSlug } }, { new: true }).select("siteSlug").lean();
+        // Another request may have set it first; keep whichever slug was saved.
+        return updated?.siteSlug ?? (await AuthModel.findById(user._id).select("siteSlug").lean())?.siteSlug ?? null;
+      } catch (error) {
+        if (error.code !== 11000) throw error;
+      }
+    }
+    throw new Error("Unable to generate a website address");
+  }
+
+  static async changePassword(userId: unknown, currentPassword: string, newPassword: string) {
+    const user = await AuthModel.findOne({ _id: userId, isDeleted: false }).select("password").lean();
+    if (!user || !(await this.verifySecret(currentPassword, user.password))) return false;
+    await AuthModel.updateOne({ _id: userId }, { $set: { password: await this.hashSecret(newPassword) } });
+    return true;
+  }
+
+  /** Every account except super admins, for the Super Admin users page. */
+  static async listUsers({ role, status, search }: { role?: string; status?: string; search?: string }) {
+    const filter: Record<string, any> = { isDeleted: false, role: role && role !== "superAdmin" ? role : { $ne: "superAdmin" } };
+    if (status === "blocked") filter.isBlocked = true;
+    if (status === "active") filter.isBlocked = false;
+    if (search?.trim()) {
+      const value = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ fullName: value }, { email: value }, { phoneNumber: value }];
+    }
+    return AuthModel.find(filter)
+      .select(USER_LIST_FIELDS)
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  /** Unblocking also clears the wrong-password count; blocking signs the account out. */
+  static async setBlocked(userId: unknown, isBlocked: boolean) {
+    return AuthModel.findOneAndUpdate(
+      { _id: userId, isDeleted: false, role: { $ne: "superAdmin" } },
+      { $set: isBlocked ? { isBlocked, accessToken: null } : { isBlocked, failedLoginAttempts: 0 } },
+      { new: true },
+    ).select(USER_LIST_FIELDS).lean();
+  }
+
+  /** Super Admin sets (or clears with null) the domain that opens an owner's website. */
+  static async setCustomDomain(userId: unknown, customDomain: string | null) {
+    if (customDomain && await AuthModel.exists({ _id: { $ne: userId }, customDomain })) {
+      throw Object.assign(new Error("This domain is already used by another institute"), { statusCode: 409 });
+    }
+    return AuthModel.findOneAndUpdate(
+      { _id: userId, isDeleted: false, role: "admin" },
+      { $set: { customDomain } },
+      { new: true },
+    ).select(USER_LIST_FIELDS).lean();
   }
 
   static async clearAccessToken(userId: unknown) {

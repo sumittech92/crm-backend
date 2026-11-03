@@ -98,3 +98,11 @@ export const requireMatchingWorkType = (req, res, next) => {
   }
   return next();
 };
+
+// Owner-only features (website, uploads): super admins act on owners through their own routes.
+export const requireOwner = (req, res, next) => {
+  if (req.role !== "admin") {
+    return res.status(403).json({ auth: false, message: "Owner access required" });
+  }
+  return next();
+};
