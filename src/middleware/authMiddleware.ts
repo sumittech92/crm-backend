@@ -106,3 +106,11 @@ export const requireOwner = (req, res, next) => {
   }
   return next();
 };
+
+// Owners, their teachers and super admins (attendance and other day-to-day staff work).
+export const requireStaff = (req, res, next) => {
+  if (!["admin", "superAdmin", "teacher"].includes(req.role)) {
+    return res.status(403).json({ auth: false, message: "Staff access required" });
+  }
+  return next();
+};
