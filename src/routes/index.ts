@@ -7,6 +7,15 @@ import websiteRoutes from "./website/website.js";
 import uploadRoutes from "./upload/upload.js";
 import attendanceRoutes from "./attendance/attendance.js";
 import feeRoutes from "./fee/fee.js";
+import courseRoutes from "./teacher/course.js";
+import batchRoutes from "./teacher/batch.js";
+import testRoutes from "./test/test.js";
+import materialRoutes from "./material/material.js";
+import noticeRoutes from "./notice/notice.js";
+import postRoutes from "./post/post.js";
+import galleryRoutes from "./gallery/gallery.js";
+import libraryRoutes from "./library/library.js";
+import reportRoutes from "./report/report.js";
 
 const router = express.Router();
 
@@ -18,5 +27,14 @@ router.use("/website", websiteRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/attendance", attendanceRoutes);
 router.use("/fee", feeRoutes);
+router.use("/course", courseRoutes);
+router.use("/batch", batchRoutes);
+router.use("/test", testRoutes);
+router.use("/material", materialRoutes);
+router.use("/notice", noticeRoutes);
+router.use("/post", postRoutes);
+router.use("/gallery", galleryRoutes);
+router.use("/library", libraryRoutes);
+router.use("/report", reportRoutes);
 
  export default router;

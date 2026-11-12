@@ -4,7 +4,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import multer from "multer";
 import HttpStatus from "http-status-codes";
-import { verifyAuthToken, requireOwner } from "../../middleware/authMiddleware.js";
+import { verifyAuthToken, requireOwner, requireStaff } from "../../middleware/authMiddleware.js";
+import { resolveOwnerScope } from "../../utilis/ownerScope.js";
 import { sendErrorResponse, sendSuccessResponse } from "../../utilis/response.js";
 
 export const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
@@ -48,6 +49,94 @@ router.post("/website", verifyAuthToken, requireOwner, (req, res) => {
     const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || `${req.protocol}://${req.get("host")}`;
     const url = `${base}/uploads/website/${req.userData._id}/${file.filename}`;
     return sendSuccessResponse(res, "File uploaded", { url, type: IMAGE_TYPES[file.mimetype] ? "image" : "video", size: file.size }, HttpStatus.CREATED);
+  });
+});
+
+// Study material files: documents and images up to 25 MB, stored under uploads/materials/<ownerId>/ (teachers upload into their institute's folder).
+const MATERIAL_TYPES: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "text/plain": ".txt",
+  ...IMAGE_TYPES,
+};
+const MAX_MATERIAL_BYTES = 25 * 1024 * 1024;
+const materialUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = path.join(UPLOAD_ROOT, "materials", String(req.materialOwnerId));
+      fs.mkdir(dir, { recursive: true }, (error) => cb(error, dir));
+    },
+    filename: (_req, file, cb) => cb(null, `${randomUUID()}${MATERIAL_TYPES[file.mimetype]}`),
+  }),
+  limits: { fileSize: MAX_MATERIAL_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (MATERIAL_TYPES[file.mimetype]) return cb(null, true);
+    return cb(Object.assign(new Error("Upload a PDF, Word, PowerPoint, Excel, text or image file. Add videos as a link."), { statusCode: HttpStatus.BAD_REQUEST }));
+  },
+});
+
+router.post("/material", verifyAuthToken, requireStaff, async (req, res) => {
+  try {
+    const { adminId } = await resolveOwnerScope(req);
+    if (!adminId) return sendErrorResponse(res, "Only an Owner or teacher can upload materials", HttpStatus.FORBIDDEN);
+    req.materialOwnerId = adminId;
+  } catch (error) {
+    return sendErrorResponse(res, error.message, error.statusCode ?? HttpStatus.FORBIDDEN);
+  }
+  materialUpload.single("file")(req, res, (error) => {
+    if (error) {
+      const message = error.code === "LIMIT_FILE_SIZE" ? "Files must be 25 MB or smaller" : error.statusCode ? error.message : "Upload failed";
+      if (!error.statusCode && error.code !== "LIMIT_FILE_SIZE") console.error("Material upload error:", error);
+      return sendErrorResponse(res, message, error.statusCode ?? HttpStatus.BAD_REQUEST);
+    }
+    const file = req.file;
+    if (!file) return sendErrorResponse(res, "Choose a file to upload", HttpStatus.BAD_REQUEST);
+    const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || `${req.protocol}://${req.get("host")}`;
+    const name = String(file.originalname || "file").replace(/[\\/]/g, "_").slice(0, 200);
+    return sendSuccessResponse(res, "File uploaded", { url: `${base}/uploads/materials/${req.materialOwnerId}/${file.filename}`, name, size: file.size, mimeType: file.mimetype }, HttpStatus.CREATED);
+  });
+});
+
+// Post and gallery photos: JPG, PNG, WebP or GIF up to 5 MB, stored under uploads/media/<ownerId>/ (videos are added as links).
+const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
+const mediaUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = path.join(UPLOAD_ROOT, "media", String(req.mediaOwnerId));
+      fs.mkdir(dir, { recursive: true }, (error) => cb(error, dir));
+    },
+    filename: (_req, file, cb) => cb(null, `${randomUUID()}${IMAGE_TYPES[file.mimetype]}`),
+  }),
+  limits: { fileSize: MAX_MEDIA_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (IMAGE_TYPES[file.mimetype]) return cb(null, true);
+    return cb(Object.assign(new Error("Upload a JPG, PNG, WebP or GIF photo. Add videos as a link."), { statusCode: HttpStatus.BAD_REQUEST }));
+  },
+});
+
+router.post("/media", verifyAuthToken, requireStaff, async (req, res) => {
+  try {
+    const { adminId } = await resolveOwnerScope(req);
+    if (!adminId) return sendErrorResponse(res, "Only an Owner or teacher can upload photos", HttpStatus.FORBIDDEN);
+    req.mediaOwnerId = adminId;
+  } catch (error) {
+    return sendErrorResponse(res, error.message, error.statusCode ?? HttpStatus.FORBIDDEN);
+  }
+  mediaUpload.single("file")(req, res, (error) => {
+    if (error) {
+      const message = error.code === "LIMIT_FILE_SIZE" ? "Photos must be 5 MB or smaller" : error.statusCode ? error.message : "Upload failed";
+      if (!error.statusCode && error.code !== "LIMIT_FILE_SIZE") console.error("Media upload error:", error);
+      return sendErrorResponse(res, message, error.statusCode ?? HttpStatus.BAD_REQUEST);
+    }
+    const file = req.file;
+    if (!file) return sendErrorResponse(res, "Choose a photo to upload", HttpStatus.BAD_REQUEST);
+    const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || `${req.protocol}://${req.get("host")}`;
+    return sendSuccessResponse(res, "Photo uploaded", { url: `${base}/uploads/media/${req.mediaOwnerId}/${file.filename}`, size: file.size }, HttpStatus.CREATED);
   });
 });
 

@@ -1,133 +1,44 @@
-
-import { Request, Response } from "express";
 import HttpStatus from "http-status-codes";
-import * as batchService from "../../services/teacher/batchServices.js"
-import { sendSuccessResponse, sendErrorResponse } from "../../utilis/response.js";
+import { sendErrorResponse, sendSuccessResponse } from "../../utilis/response.js";
+import { BatchService } from "../../services/teacher/batchServices.js";
+import { resolveOwnerScope } from "../../utilis/ownerScope.js";
 
-// CREATE BATCH
-export const createBatch = async (req: Request, res: Response) => {
-    try {
-        const batch = await batchService.createBatch(req.body);
-
-        return sendSuccessResponse( res, "Batch created successfully", batch, HttpStatus.CREATED);
-
-    } catch (error: any) {
-        return sendErrorResponse(
-            res,
-            error.message,
-            HttpStatus.BAD_REQUEST
-        );
-    }
+const handleError = (res, error, label) => {
+  if (error.statusCode) return sendErrorResponse(res, error.message, error.statusCode);
+  console.error(`${label}:`, error);
+  return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
 };
 
-// GET ALL BATCHES
-export const getAllBatches = async (req: Request, res: Response) => {
-    try {
-        const page = Math.max(1, Number(req.query.page) || 1);
-
-        const limit = Math.min(
-            100,
-            Math.max(1, Number(req.query.limit) || 10)
-        );
-
-        const search = req.query.search as string | undefined;
-
-        const result = await batchService.getAllBatches(
-            page,
-            limit,
-            search
-        );
-
-        return sendSuccessResponse(
-            res,
-            "Batch list fetched successfully",
-            result,
-            HttpStatus.OK
-        );
-
-    } catch (error: any) {
-        return sendErrorResponse(
-            res,
-            error.message,
-            HttpStatus.INTERNAL_SERVER_ERROR
-        );
-    }
+export const createBatch = async (req, res) => {
+  try {
+    if (req.role !== "admin") return sendErrorResponse(res, "Only an Owner can add batches", HttpStatus.FORBIDDEN);
+    const { workType, adminId } = await resolveOwnerScope(req);
+    if (!workType) return sendErrorResponse(res, "Admin work type is not configured", HttpStatus.FORBIDDEN);
+    return sendSuccessResponse(res, "Batch created successfully", await BatchService.createBatch(req.body, workType, adminId), HttpStatus.CREATED);
+  } catch (error) { return handleError(res, error, "Batch creation error"); }
 };
 
-// GET BATCH BY ID
-export const getBatchById = async (req: Request, res: Response) => {
-    try {
-        const batch = await batchService.getBatchById(req.params.id);
-
-        return sendSuccessResponse(
-            res,
-            "Batch fetched successfully",
-            batch,
-            HttpStatus.OK
-        );
-
-    } catch (error: any) {
-        const statusCode = error.message === "Batch not found"
-            ? HttpStatus.NOT_FOUND
-            : HttpStatus.BAD_REQUEST;
-
-        return sendErrorResponse(
-            res,
-            error.message,
-            statusCode
-        );
-    }
+// Owners, their teachers (dropdowns, attendance) and super admins. ?courseCode= and ?status= narrow the list.
+export const getAllBatches = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Batches retrieved successfully", await BatchService.getAllBatches(await resolveOwnerScope(req), { status: req.query.status, courseCode: req.query.courseCode }));
+  } catch (error) { return handleError(res, error, "Batch list error"); }
 };
 
-// UPDATE BATCH
-export const updateBatch = async (req: Request, res: Response) => {
-    try {
-        const batch = await batchService.updateBatch(
-            req.params.id,
-            req.body
-        );
-
-        return sendSuccessResponse(
-            res,
-            "Batch updated successfully",
-            batch,
-            HttpStatus.OK
-        );
-
-    } catch (error: any) {
-        const statusCode = error.message === "Batch not found"
-            ? HttpStatus.NOT_FOUND
-            : HttpStatus.BAD_REQUEST;
-
-        return sendErrorResponse(
-            res,
-            error.message,
-            statusCode
-        );
-    }
+export const getBatchById = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Batch retrieved successfully", await BatchService.getBatch(req.params.batchId, await resolveOwnerScope(req)));
+  } catch (error) { return handleError(res, error, "Batch lookup error"); }
 };
 
-// DELETE BATCH
-export const deleteBatch = async (req: Request, res: Response) => {
-    try {
-        const batch = await batchService.deleteBatch(req.params.id);
+export const updateBatch = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Batch updated successfully", await BatchService.updateBatch(req.params.batchId, req.body, await resolveOwnerScope(req)));
+  } catch (error) { return handleError(res, error, "Batch update error"); }
+};
 
-        return sendSuccessResponse(
-            res,
-            "Batch deleted successfully",
-            batch,
-            HttpStatus.OK
-        );
-
-    } catch (error: any) {
-        const statusCode = error.message === "Batch not found"
-            ? HttpStatus.NOT_FOUND
-            : HttpStatus.BAD_REQUEST;
-
-        return sendErrorResponse(
-            res,
-            error.message,
-            statusCode
-        );
-    }
+export const deleteBatch = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Batch deleted successfully", await BatchService.deleteBatch(req.params.batchId, await resolveOwnerScope(req)));
+  } catch (error) { return handleError(res, error, "Batch deletion error"); }
 };

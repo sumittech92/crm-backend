@@ -4,6 +4,9 @@ import Website, { websiteListSections, websiteObjectSections } from "../../model
 import { normalizeDomain } from "../../utilis/domain.js";
 import Teacher from "../../model/teacher/teacherInfo.js";
 import StudentDetailsModel from "../../model/students/studentInfo.js";
+import { NoticeService } from "../notice/notice.js";
+import { PostService } from "../post/post.js";
+import { GalleryService } from "../gallery/gallery.js";
 
 const statusError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
 const SECTIONS = [...websiteObjectSections, ...websiteListSections];
@@ -63,6 +66,9 @@ export class WebsiteService {
     const profile: Record<string, any> = {};
     for (const section of websiteObjectSections) profile[section] = website[section] ?? {};
     for (const section of websiteListSections) profile[section] = (website[section] ?? []).filter((item) => item?.status !== "Draft");
+    // Live notices and posts the owner marked "Show on website" lead the news feed; chosen albums lead the gallery.
+    profile.updates = [...await NoticeService.websiteUpdates(owner._id), ...await PostService.websiteUpdates(owner._id), ...(profile.updates ?? [])];
+    profile.gallery = [...await GalleryService.websiteGallery(owner._id), ...(profile.gallery ?? [])];
     return { siteSlug: owner.siteSlug, instituteName: website.settings?.name || owner.instituteName || owner.fullName, workType: website.workType, profile };
   }
 
