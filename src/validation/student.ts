@@ -10,6 +10,12 @@ const studentFieldsSchema = Joi.object({
   password: Joi.string().min(8).required(),
   profileImage: Joi.string().allow("", null).optional(),
   gender: Joi.string().valid("male", "female", "other").allow(null).optional(),
+  dateOfBirth: Joi.date().max("now").allow(null).optional().messages({ "date.max": "Date of birth cannot be in the future" }),
+  status: Joi.string().valid("active", "inactive").optional(),
+  feePlan: Joi.object({
+    amount: Joi.number().min(0).max(10000000).allow(null).optional(),
+    discount: Joi.number().min(0).max(10000000).optional(),
+  }).optional(),
   parentsInfo: Joi.object({
     fatherName: Joi.string().trim().allow("", null).optional(),
     motherName: Joi.string().trim().allow("", null).optional(),

@@ -13,6 +13,7 @@ import { TestService } from "../test/test.js";
 import { parseDay, studentPlacement, todayKey } from "../../utilis/ownerScope.js";
 import { StaffActor, teacherBatchIds } from "../../utilis/staffAccess.js";
 import { noticeState } from "../notice/notice.js";
+import { TimetableService } from "../timetable/timetable.js";
 
 const DAY = 86400000;
 const dayKey = (date: Date | string) => new Date(date).toISOString().slice(0, 10);
@@ -132,42 +133,73 @@ export class DashboardService {
     };
   }
 
-  /** Teacher "My dashboard": today's batches, my batches and tests waiting for marks. */
+  /** "In progress" / "Done" / "Later" for a slot today; the first later one becomes "Up next". */
+  private static timeState(items: { start: string; end: string; status: string; tone: string }[]) {
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    items.forEach(item => {
+      const state = nowMinutes >= minutes(item.end) ? ["Done", "neutral"] : nowMinutes >= minutes(item.start) ? ["In progress", "success"] : ["Later", "neutral"];
+      item.status = state[0]; item.tone = state[1];
+    });
+    const next = items.find(item => item.status === "Later");
+    if (next) Object.assign(next, { status: "Up next", tone: "info" });
+  }
+
+  /** School teachers: today's periods come from the timetable and their classes from Subjects (plus sections they class-teach). */
+  private static async schoolTeacher(actor: StaffActor) {
+    const periods = await TimetableService.today(actor);
+    const today = periods.map((period, index) => ({
+      time: period.startTime, start: period.startTime, end: period.endTime, status: "", tone: "",
+      title: `Period ${index + 1} · ${period.subject}`,
+      detail: `${period.group}${period.room ? ` · Room ${period.room}` : ""} · ${clock(period.startTime)} – ${clock(period.endTime)}`,
+    }));
+    this.timeState(today);
+    const groups = (await TimetableService.myClasses(actor)).map(row => ({
+      time: String(row.students), title: row.group,
+      detail: [row.classTeacher ? "Class teacher" : "", row.subjects.join(", ")].filter(Boolean).join(" · ") || "—",
+      status: row.classTeacher ? "Class teacher" : "Subject teacher", tone: row.classTeacher ? "success" : "info",
+    }));
+    return { today: today.map(({ start, end, ...item }) => item), groups };
+  }
+
+  /** Teacher "My dashboard": today's classes, my classes / batches and tests waiting for marks. */
   static async teacher(actor: StaffActor, name: string | null) {
+    const work = await this.marksDue(actor);
+    if (actor.workType === "school") return { name: name || "Teacher", ...await this.schoolTeacher(actor), work };
     const myBatchIds = await teacherBatchIds(actor);
     const batches = await Batch.find({ _id: { $in: myBatchIds }, status: "active" }).lean();
     const courses = await Course.find({ _id: { $in: batches.map(batch => batch.courseId) } }).select("name").lean();
     const courseName = new Map(courses.map(course => [String(course._id), course.name]));
     const students = await StudentDetailsModel.find({ adminId: actor.adminId, workType: actor.workType }).select("coachingInfo.batchTiming schoolInfo.className schoolInfo.section").lean();
     const studentCount = (batch: Record<string, any>) => students.filter(student => BatchService.studentInBatch(student, batch, courseName.get(String(batch.courseId)))).length;
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const todayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][now.getDay()];
+    const todayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()];
 
-    const today = batches.filter(batch => batch.days.includes(todayName as any) && batch.startTime && batch.endTime)
+    // Coaching: batches meeting today, from their days and timing.
+    const slots = batches.filter(batch => batch.days.includes(todayName as any) && batch.startTime && batch.endTime)
       .sort((a, b) => minutes(a.startTime!) - minutes(b.startTime!))
-      .map(batch => {
-        const start = minutes(batch.startTime!), end = minutes(batch.endTime!);
-        const state = nowMinutes >= end ? ["Done", "neutral"] : nowMinutes >= start ? ["In progress", "success"] : ["Later", "neutral"];
-        return { time: batch.startTime!, title: batch.name, detail: `${courseName.get(String(batch.courseId)) ?? ""}${batch.room ? ` · ${batch.room}` : ""} · ${clock(batch.startTime!)} – ${clock(batch.endTime!)}`, status: state[0], tone: state[1] };
-      });
-    const next = today.find(item => item.status === "Later");
-    if (next) Object.assign(next, { status: "Up next", tone: "info" });
+      .map(batch => ({
+        time: batch.startTime!, start: batch.startTime!, end: batch.endTime!, status: "", tone: "", title: batch.name,
+        detail: `${courseName.get(String(batch.courseId)) ?? ""}${batch.room ? ` · ${batch.room}` : ""} · ${clock(batch.startTime!)} – ${clock(batch.endTime!)}`,
+      }));
+    this.timeState(slots);
+    const today = slots.map(({ start, end, ...item }) => item);
 
     const groups = batches.map(batch => ({
-      time: String(studentCount(batch)), title: actor.workType === "school" ? `${courseName.get(String(batch.courseId)) ?? ""} · ${batch.name}` : batch.name,
-      detail: actor.workType === "school" ? "Class teacher" : `${courseName.get(String(batch.courseId)) ?? ""} · ${batch.days.join(", ")}${batch.startTime ? ` · ${clock(batch.startTime)}` : ""}`,
-      status: actor.workType === "school" ? "Class teacher" : "Active", tone: "success",
+      time: String(studentCount(batch)), title: batch.name,
+      detail: `${courseName.get(String(batch.courseId)) ?? ""} · ${batch.days.join(", ")}${batch.startTime ? ` · ${clock(batch.startTime)}` : ""}`,
+      status: "Active", tone: "success",
     }));
 
-    // Tests whose papers are held but still missing marks this teacher can enter.
+    return { name: name || "Teacher", today, groups, work };
+  }
+
+  /** Tests whose papers are held but still missing marks this teacher can enter. */
+  private static async marksDue(actor: StaffActor) {
     const tests = (await TestService.getAllTests(actor)).filter(test => !test.resultsPublished && !test.cancelled);
-    const work = tests.flatMap(test => test.papers.filter(paper => paper.canEnterMarks && dayKey(paper.date) <= todayKey() && paper.entered < test.students).map(paper => ({
+    return tests.flatMap(test => test.papers.filter(paper => paper.canEnterMarks && dayKey(paper.date) <= todayKey() && paper.entered < test.students).map(paper => ({
       time: String(test.students - paper.entered), title: `${test.name} · ${paper.subject}`,
       detail: `${test.course?.name ?? ""}${test.batches.length ? ` · ${test.batches.map(batch => batch.name).join(", ")}` : ""} · ${paper.entered} of ${test.students} entered`,
       status: "Marks due", tone: "warning",
     }))).slice(0, 5);
-
-    return { name: name || "Teacher", today, groups, work };
   }
 }

@@ -9,6 +9,10 @@ export interface StudentDocument extends mongoose.Document {
     fullName: string | null;
     profileImage: string | null;
     gender: "male" | "female" | null;
+    dateOfBirth: Date | null;
+    status: "active" | "inactive";
+    // The student's agreed fee (coaching: per month, school: per term) and discount / concession. Fees are still collected per period in the Fees module.
+    feePlan: { amount: number | null; discount: number };
 
     parentsInfo: {
         fatherName: string | null;
@@ -89,6 +93,19 @@ const studentDetailsSchema = new mongoose.Schema<StudentDocument>(
             default: null,
         },
 
+        dateOfBirth: {
+            type: Date,
+            default: null,
+        },
+        status: {
+            type: String,
+            enum: ["active", "inactive"],
+            default: "active",
+        },
+        feePlan: {
+            amount: { type: Number, default: null, min: 0 },
+            discount: { type: Number, default: 0, min: 0 },
+        },
         // Parents information
         parentsInfo: {
             fatherName: { type: String, default: null },

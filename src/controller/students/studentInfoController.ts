@@ -1,6 +1,8 @@
 import HttpStatus from "http-status-codes";
 import { sendErrorResponse, sendSuccessResponse } from "../../utilis/response.js";
 import { StudentInfoService } from "../../services/student/studentInfo.js";
+import { resolveOwnerScope } from "../../utilis/ownerScope.js";
+import { staffActor } from "../../utilis/staffAccess.js";
 
 // Admins only manage their own students; super admins see every student.
 const ownerScope = (req) => req.role === "admin" ? { workType: req.userData.workType, adminId: req.userData._id } : {};
@@ -17,6 +19,7 @@ export const createStudent = async (req, res) => {
     if (error.message === "Student data must match the admin work type") {
       return sendErrorResponse(res, error.message, HttpStatus.BAD_REQUEST);
     }
+    if (error.statusCode) return sendErrorResponse(res, error.message, error.statusCode);
     console.error("Student creation error:", error);
     return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
   }
@@ -28,19 +31,21 @@ const handleStudentError = (res, error, label) => {
   }
   if (error.message === "Student not found") return sendErrorResponse(res, error.message, HttpStatus.NOT_FOUND);
   if (error.message === "Invalid Student ID") return sendErrorResponse(res, error.message, HttpStatus.BAD_REQUEST);
+  if (error.statusCode) return sendErrorResponse(res, error.message, error.statusCode);
   console.error(`${label}:`, error);
   return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
 };
 
+// Owners: any of their students; teachers: students of their own sections / batches (read-only, without fee details).
 export const getStudent = async (req, res) => {
   try {
-    return sendSuccessResponse(res, "Student retrieved successfully", await StudentInfoService.getStudentById(req.params.studentId, ownerScope(req)));
+    return sendSuccessResponse(res, "Student retrieved successfully", await StudentInfoService.getFor(req.params.studentId, await resolveOwnerScope(req), await staffActor(req)));
   } catch (error) { return handleStudentError(res, error, "Student lookup error"); }
 };
 
 export const getStudents = async (req, res) => {
   try {
-    return sendSuccessResponse(res, "Students retrieved successfully", await StudentInfoService.getAllStudents(ownerScope(req)));
+    return sendSuccessResponse(res, "Students retrieved successfully", await StudentInfoService.listFor(await resolveOwnerScope(req), await staffActor(req)));
   } catch (error) { return handleStudentError(res, error, "Student list error"); }
 };
 
