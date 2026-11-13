@@ -121,6 +121,8 @@ export class StudentInfoService {
     const profileFields = ["fullName", "profileImage", "gender", "dateOfBirth", "status", "feePlan", "parentsInfo", "address", "schoolInfo", "coachingInfo"];
     const profileUpdate: Record<string, any> = {};
     for (const field of profileFields) if (input[field] !== undefined) profileUpdate[field] = input[field];
+    // Optional subjects are chosen on the Exams pages, not in the student form: keep them when the form saves schoolInfo.
+    if (profileUpdate.schoolInfo) profileUpdate.schoolInfo = { optionalSubjects: existingStudent.schoolInfo?.optionalSubjects ?? [], ...profileUpdate.schoolInfo };
 
     const accountUpdate: Record<string, any> = {};
     for (const field of ["fullName", "email", "countryCode", "phoneNumber"]) {

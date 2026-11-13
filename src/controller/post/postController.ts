@@ -11,24 +11,49 @@ const handleError = (res, error, label) => {
 
 export const createPost = async (req, res) => {
   try {
-    return sendSuccessResponse(res, "Post created successfully", await PostService.createPost(req.body, await staffActor(req), req.userData.fullName ?? null), HttpStatus.CREATED);
-  } catch (error) { return handleError(res, error, "Post creation error"); }
+    return sendSuccessResponse(
+      res,
+      "Post created successfully",
+      await PostService.createPost(req.body, await staffActor(req), req.userData.fullName ?? null),
+      HttpStatus.CREATED,
+    );
+  } catch (error) {
+    return handleError(res, error, "Post creation error");
+  }
 };
 
 export const getPosts = async (req, res) => {
   try {
-    return sendSuccessResponse(res, "Posts retrieved successfully", await PostService.getAllPosts(await staffActor(req)));
-  } catch (error) { return handleError(res, error, "Post list error"); }
+    return sendSuccessResponse(
+      res,
+      "Posts retrieved successfully",
+      await PostService.getAllPosts(await staffActor(req)),
+    );
+  } catch (error) {
+    return handleError(res, error, "Post list error");
+  }
 };
 
 export const updatePost = async (req, res) => {
   try {
-    return sendSuccessResponse(res, "Post updated successfully", await PostService.updatePost(req.params.postId, req.body, await staffActor(req)));
-  } catch (error) { return handleError(res, error, "Post update error"); }
+    return sendSuccessResponse(
+      res,
+      "Post updated successfully",
+      await PostService.updatePost(req.params.postId, req.body, await staffActor(req)),
+    );
+  } catch (error) {
+    return handleError(res, error, "Post update error");
+  }
 };
 
 export const deletePost = async (req, res) => {
   try {
-    return sendSuccessResponse(res, "Post deleted successfully", await PostService.deletePost(req.params.postId, await staffActor(req)));
-  } catch (error) { return handleError(res, error, "Post deletion error"); }
+    return sendSuccessResponse(
+      res,
+      "Post deleted successfully",
+      await PostService.deletePost(req.params.postId, await staffActor(req)),
+    );
+  } catch (error) {
+    return handleError(res, error, "Post deletion error");
+  }
 };

@@ -2,6 +2,7 @@ import express from "express";
 import * as portal from "../../controller/portal/portalController.js";
 import { verifyAuthToken } from "../../middleware/authMiddleware.js";
 import { validateFeeSubmission, validateTaskSubmission } from "../../validation/portal.js";
+import { validateOptionalSubjects } from "../../validation/test.js";
 
 const router = express.Router();
 
@@ -17,6 +18,9 @@ router.get("/attendance", ...guard, portal.getAttendance);
 router.get("/fees", ...guard, portal.getFees);
 router.post("/fees/submissions", ...guard, validateFeeSubmission, portal.submitFee);
 router.get("/tests", ...guard, portal.getTests);
+router.post("/tests/:testCode/admit-card", ...guard, portal.downloadAdmitCard);
+router.get("/optional-subjects", ...guard, portal.getOptionalSubjects);
+router.put("/optional-subjects", ...guard, validateOptionalSubjects, portal.setOptionalSubjects);
 router.get("/results", ...guard, portal.getResults);
 router.get("/materials", ...guard, portal.getMaterials);
 router.get("/notices", ...guard, portal.getNotices);

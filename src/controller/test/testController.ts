@@ -70,3 +70,28 @@ export const unpublishResults = async (req, res) => {
     return sendSuccessResponse(res, "Results moved back to draft", await TestService.setPublished(req.params.testId, false, await actorFor(req)));
   } catch (error) { return handleError(res, error, "Result unpublish error"); }
 };
+
+// School admit cards (owner / class teacher).
+export const getAdmitCards = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Admit cards retrieved successfully", await TestService.getAdmitCards(req.params.testId, await actorFor(req)));
+  } catch (error) { return handleError(res, error, "Admit card list error"); }
+};
+
+export const setAdmitAllowed = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, req.body.allowed ? "Student allowed to download the admit card" : "Permission removed", await TestService.setAdmitAllowed(req.params.testId, req.body, await actorFor(req)));
+  } catch (error) { return handleError(res, error, "Admit card permission error"); }
+};
+
+export const downloadAdmitCards = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Admit cards ready", await TestService.downloadAdmitCards(req.params.testId, req.body, await actorFor(req)));
+  } catch (error) { return handleError(res, error, "Admit card download error"); }
+};
+
+export const setStudentOptionalSubjects = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Optional subjects saved", await TestService.setStudentOptionalSubjects(req.params.testId, req.params.studentCode, req.body.subjects, await actorFor(req)));
+  } catch (error) { return handleError(res, error, "Optional subjects error"); }
+};

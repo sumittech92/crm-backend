@@ -1,7 +1,7 @@
 import express from "express";
-import { createTest, deleteTest, getMarks, getResults, getTest, getTests, publishResults, saveMarks, unpublishResults, updateTest } from "../../controller/test/testController.js";
+import { createTest, deleteTest, downloadAdmitCards, getAdmitCards, getMarks, getResults, getTest, getTests, publishResults, saveMarks, setAdmitAllowed, setStudentOptionalSubjects, unpublishResults, updateTest } from "../../controller/test/testController.js";
 import { verifyAuthToken, requireStaff } from "../../middleware/authMiddleware.js";
-import { validateCreateTest, validateMarks, validateUpdateTest } from "../../validation/test.js";
+import { validateAdmitAllow, validateAdmitDownload, validateCreateTest, validateMarks, validateOptionalSubjects, validateUpdateTest } from "../../validation/test.js";
 
 const router = express.Router();
 
@@ -16,5 +16,10 @@ router.get("/:testId/marks", verifyAuthToken, requireStaff, getMarks);
 router.put("/:testId/marks", verifyAuthToken, requireStaff, validateMarks, saveMarks);
 router.post("/:testId/publish", verifyAuthToken, requireStaff, publishResults);
 router.post("/:testId/unpublish", verifyAuthToken, requireStaff, unpublishResults);
+// School admit cards: owner sees every student, a class teacher their sections (checked in the service).
+router.get("/:testId/admit-cards", verifyAuthToken, requireStaff, getAdmitCards);
+router.post("/:testId/admit-cards/allow", verifyAuthToken, requireStaff, validateAdmitAllow, setAdmitAllowed);
+router.post("/:testId/admit-cards/download", verifyAuthToken, requireStaff, validateAdmitDownload, downloadAdmitCards);
+router.put("/:testId/admit-cards/:studentCode/subjects", verifyAuthToken, requireStaff, validateOptionalSubjects, setStudentOptionalSubjects);
 
 export default router;

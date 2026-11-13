@@ -25,6 +25,11 @@ export const getNotices = portal("Portal notices error", "Notices retrieved succ
 export const getUpdates = portal("Portal updates error", "Updates retrieved successfully", ctx => PortalService.updates(ctx));
 export const getSyllabus = portal("Portal syllabus error", "Syllabus retrieved successfully", ctx => PortalService.syllabus(ctx));
 export const getTasks = portal("Portal tasks error", "Homework and assignments retrieved successfully", ctx => PortalService.tasks(ctx));
+// Admit cards and optional subjects are the student's own: parents can see the exam list but not download or change them.
+const studentOnly = (req) => { if (req.role !== "student") throw statusError("Only the student can do this from their own login", HttpStatus.FORBIDDEN); };
+export const downloadAdmitCard = portal("Portal admit card error", "Admit card ready", (ctx, req) => { studentOnly(req); return PortalService.admitCard(ctx, req.params.testCode); });
+export const getOptionalSubjects = portal("Portal optional subjects error", "Optional subjects retrieved successfully", ctx => PortalService.optionalSubjects(ctx));
+export const setOptionalSubjects = portal("Portal optional subjects error", "Optional subjects saved", (ctx, req) => { studentOnly(req); return PortalService.setOptionalSubjects(ctx, req.body.subjects); });
 // Only the student hands in their own work.
 export const submitTask = portal("Portal task submission error", "Assignment submitted", (ctx, req) => {
   if (req.role !== "student") throw statusError("Only the student can submit an assignment", HttpStatus.FORBIDDEN);

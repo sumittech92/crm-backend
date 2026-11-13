@@ -39,6 +39,8 @@ export interface StudentDocument extends mongoose.Document {
         rollNumber: string | null;
         currentTerm: string | null;
         admissionCategory: string | null;
+        // Optional (elective) subjects of the class the student takes; chosen by the student or class teacher.
+        optionalSubjects: string[];
     };
 
     coachingInfo: {
@@ -140,6 +142,7 @@ const studentDetailsSchema = new mongoose.Schema<StudentDocument>(
             rollNumber: { type: String, default: null },
             currentTerm: { type: String, default: null },
             admissionCategory: { type: String, default: null },
+            optionalSubjects: { type: [String], default: [] },
         },
 
         // Coaching academic information

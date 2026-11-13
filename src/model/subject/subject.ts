@@ -22,6 +22,8 @@ export interface SubjectDocument extends Document {
     // Short code shown on timetables, e.g. "MATH-09".
     code: string | null;
     periodsPerWeek: number | null;
+    // Elective (e.g. Class 11–12 "Physical Education" / "Computer Science"): only students who choose it sit its exam paper.
+    optional: boolean;
     sections: SubjectSection[];
     status: (typeof subjectStatuses)[number];
 }
@@ -43,6 +45,7 @@ const subjectSchema = new Schema<SubjectDocument>(
         name: { type: String, required: true, trim: true },
         code: { type: String, default: null, trim: true },
         periodsPerWeek: { type: Number, default: null, min: 1, max: 60 },
+        optional: { type: Boolean, default: false },
         sections: { type: [sectionSchema], default: [] },
         status: { type: String, enum: subjectStatuses, default: "active" },
     },

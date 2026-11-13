@@ -10,6 +10,19 @@ export interface TestPaper {
 }
 
 /**
+ * School admit cards for an exam. The owner (principal) releases them and decides whether fees must be cleared:
+ * with `feeRequired`, a student downloads their own card only when no fee due on or before the first paper is unpaid,
+ * unless the owner allowed that student (`allowedStudentIds`). Class teachers and the owner can always download.
+ */
+export interface AdmitCardSettings {
+    released: boolean;
+    feeRequired: boolean;
+    instructions: string | null;
+    // StudentDetails documents the owner let through despite pending fees.
+    allowedStudentIds: Types.ObjectId[];
+}
+
+/**
  * Coaching: a test for one batch ("Chapter 4 test", Physics, 19 Oct, 50 marks).
  * School: an exam for a class and some or all of its sections ("Term 1 – Mid-term") with a date sheet of papers.
  * Status is worked out from the dates: scheduled → completed → published (or cancelled).
@@ -26,6 +39,10 @@ export interface TestDocument extends Document {
     // Coaching: the one batch; school: chosen sections (empty = every section of the class).
     batchIds: Types.ObjectId[];
     papers: Types.DocumentArray<TestPaper & Document>;
+    // School: one sitting time for every paper ("09:00"–"12:00", 24-hour).
+    startTime: string | null;
+    endTime: string | null;
+    admitCard: AdmitCardSettings;
     cancelled: boolean;
     resultsPublished: boolean;
     publishedAt: Date | null;
@@ -41,6 +58,18 @@ const paperSchema = new Schema<TestPaper>(
     { _id: true }
 );
 
+const admitCardSchema = new Schema<AdmitCardSettings>(
+    {
+        released: { type: Boolean, default: false },
+        feeRequired: { type: Boolean, default: false },
+        instructions: { type: String, default: null, trim: true },
+        allowedStudentIds: { type: [{ type: Schema.Types.ObjectId, ref: "StudentDetails" }], default: [] },
+    },
+    { _id: false }
+);
+
+const time = { type: String, default: null, match: /^([01]\d|2[0-3]):[0-5]\d$/ };
+
 const testSchema = new Schema<TestDocument>(
     {
         testCode: { type: String, required: true, match: /^\d{6}$/, unique: true },
@@ -52,6 +81,9 @@ const testSchema = new Schema<TestDocument>(
         courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true },
         batchIds: { type: [{ type: Schema.Types.ObjectId, ref: "Batch" }], default: [], index: true },
         papers: { type: [paperSchema], validate: [(papers: unknown[]) => papers.length > 0, "Add at least one subject"] },
+        startTime: time,
+        endTime: time,
+        admitCard: { type: admitCardSchema, default: () => ({}) },
         cancelled: { type: Boolean, default: false },
         resultsPublished: { type: Boolean, default: false },
         publishedAt: { type: Date, default: null },
@@ -88,6 +120,32 @@ const testMarkSchema = new Schema<TestMarkDocument>(
 
 testMarkSchema.index({ testId: 1, paperId: 1, studentId: 1 }, { unique: true });
 
+/** Every admit card download: who printed which student's card (student, class teacher or owner) and when. */
+export interface AdmitCardLogDocument extends Document {
+    adminId: Types.ObjectId;
+    testId: Types.ObjectId;
+    studentId: Types.ObjectId;
+    downloadedBy: Types.ObjectId;
+    role: string;
+    name: string | null;
+    createdAt: Date;
+}
+
+const admitCardLogSchema = new Schema<AdmitCardLogDocument>(
+    {
+        adminId: { type: Schema.Types.ObjectId, ref: "Auth", required: true, index: true },
+        testId: { type: Schema.Types.ObjectId, ref: "Test", required: true },
+        studentId: { type: Schema.Types.ObjectId, ref: "StudentDetails", required: true },
+        downloadedBy: { type: Schema.Types.ObjectId, ref: "Auth", required: true },
+        role: { type: String, required: true },
+        name: { type: String, default: null },
+    },
+    { timestamps: { createdAt: true, updatedAt: false }, versionKey: false, collection: "AdmitCardLogs" }
+);
+
+admitCardLogSchema.index({ testId: 1, studentId: 1, createdAt: -1 });
+
 export const Test = mongoose.model<TestDocument>("Test", testSchema);
 export const TestMark = mongoose.model<TestMarkDocument>("TestMark", testMarkSchema);
+export const AdmitCardLog = mongoose.model<AdmitCardLogDocument>("AdmitCardLog", admitCardLogSchema);
 export default Test;

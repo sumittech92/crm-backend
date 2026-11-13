@@ -23,6 +23,7 @@ export class SubjectService {
     if (input.code !== undefined) data.code = blankToNull(input.code) ? String(input.code).trim().toUpperCase() : null;
     if (input.periodsPerWeek !== undefined) data.periodsPerWeek = input.periodsPerWeek || null;
     if (input.status !== undefined) data.status = input.status;
+    if (input.optional !== undefined) data.optional = !!input.optional;
     if (input.courseCode !== undefined) {
       const match = codeOrId(input.courseCode, "courseCode");
       const course = match ? await Course.findOne({ ...match, adminId, workType: "school" }).select("_id").lean() : null;
@@ -171,7 +172,7 @@ export class SubjectService {
         })
         .sort((a, b) => a.name.localeCompare(b.name));
       return {
-        _id: subject._id, subjectCode: subject.subjectCode, name: subject.name, code: subject.code, periodsPerWeek: subject.periodsPerWeek, status: subject.status,
+        _id: subject._id, subjectCode: subject.subjectCode, name: subject.name, code: subject.code, periodsPerWeek: subject.periodsPerWeek, optional: !!subject.optional, status: subject.status,
         course: course ? { courseCode: course.courseCode, name: course.name } : null, sections,
         scheduled: sections.reduce((sum, section) => sum + section.scheduled, 0),
       };

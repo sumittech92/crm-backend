@@ -150,15 +150,80 @@ export class PortalService {
       : student.workType === "school" && courseIds.has(String(test.courseId)));
   }
 
+  /** Last paper of a test as YYYY-MM-DD. */
+  private static lastPaperDay(test: Record<string, any>) {
+    return test.papers.reduce((last: string, paper) => dayKey(paper.date) > last ? dayKey(paper.date) : last, "");
+  }
+
+  /** School: whether the student can download their own admit card now, and why not. */
+  private static async admitInfo(test: Record<string, any>, student: Record<string, any>) {
+    const pending = (await TestService.pendingFees([student._id], TestService.firstPaperDay(test))).get(String(student._id));
+    const status = TestService.admitStatus(test, student, pending?.amount ?? 0);
+    const over = this.lastPaperDay(test) < todayKey();
+    const message = status === "not_released" ? "Admit cards are not released yet."
+      : status === "fee_pending" ? `Fee of ₹${(pending?.amount ?? 0).toLocaleString("en-IN")} is pending (${pending?.periods.join(", ")}). Pay the fee or contact your class teacher.`
+      : status === "cancelled" ? "This exam is cancelled."
+      : over ? "This exam is over." : null;
+    return { released: !!test.admitCard?.released, status, feeDue: pending?.amount ?? 0, canDownload: (status === "eligible" || status === "allowed") && !over, message };
+  }
+
   static async tests({ student }: PortalContext) {
     const tests = await this.myTests(student);
     const today = todayKey();
-    return tests.map(test => ({
-      testCode: test.testCode, name: test.name, term: test.term, status: TestService.statusOf(test), resultsPublished: test.resultsPublished,
-      papers: [...test.papers].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-        // A paper is upcoming until its day has passed, unless its results are already out.
-        .map(paper => ({ subject: paper.subject, date: paper.date, maxMarks: paper.maxMarks, upcoming: dayKey(paper.date) >= today && !test.resultsPublished })),
-    })).sort((a, b) => new Date(a.papers[0]?.date ?? 0).getTime() - new Date(b.papers[0]?.date ?? 0).getTime());
+    const rows = await Promise.all(tests.map(async test => {
+      const optional = await TestService.optionalSubjects(test);
+      return {
+        testCode: test.testCode, name: test.name, term: test.term, status: TestService.statusOf(test), resultsPublished: test.resultsPublished,
+        startTime: test.startTime ?? null, endTime: test.endTime ?? null,
+        // Only the papers this student sits (optional subjects they did not choose are left out).
+        papers: test.papers.filter(paper => TestService.takesPaper(student, paper, optional)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          // A paper is upcoming until its day has passed, unless its results are already out.
+          .map(paper => ({ subject: paper.subject, date: paper.date, maxMarks: paper.maxMarks, optional: optional.has(String(paper.subject).toLowerCase()), upcoming: dayKey(paper.date) >= today && !test.resultsPublished })),
+        admitCard: test.workType === "school" ? await this.admitInfo(test, student) : null,
+      };
+    }));
+    return rows.sort((a, b) => new Date(a.papers[0]?.date ?? 0).getTime() - new Date(b.papers[0]?.date ?? 0).getTime());
+  }
+
+  /** The student's own admit card. Allowed once released and (when the principal requires it) fees are cleared. Logged. */
+  static async admitCard({ student, user }: PortalContext, testCode: string) {
+    const test = (await this.myTests(student, { testCode: String(testCode ?? "") }))[0];
+    if (!test || test.workType !== "school") throw statusError("Exam not found", HttpStatus.NOT_FOUND);
+    const info = await this.admitInfo(test, student);
+    if (!info.canDownload) throw statusError(info.message || "The admit card is not available", HttpStatus.FORBIDDEN);
+    const course = await Course.findById(test.courseId).select("name").lean();
+    const card = TestService.admitCard(test, course, student, await TestService.optionalSubjects(test));
+    await TestService.logAdmitDownloads(test, [student._id], { userId: user._id, role: "student", name: student.fullName });
+    return card;
+  }
+
+  /**
+   * School: the class's optional subjects and the ones the student takes. The student can change them
+   * except while one of their exams is going on (then the class teacher changes them).
+   */
+  static async optionalSubjects({ student }: PortalContext) {
+    if (student.workType !== "school") return { options: [], chosen: [], locked: true, message: null };
+    const { courseIds } = await this.groups(student);
+    const options = await TestService.optionalSubjectNames(student.adminId, [...courseIds]);
+    const chosen = options.filter(option => (student.schoolInfo?.optionalSubjects || []).some(name => String(name).toLowerCase() === option.toLowerCase()));
+    const running = await this.runningExam(student);
+    return { options, chosen, locked: !!running, message: running ? `${running.name} is going on. Ask your class teacher to change optional subjects.` : null };
+  }
+
+  private static async runningExam(student: Record<string, any>) {
+    const today = todayKey();
+    return (await this.myTests(student)).find(test => TestService.firstPaperDay(test) <= today && today <= this.lastPaperDay(test));
+  }
+
+  static async setOptionalSubjects(ctx: PortalContext, subjects: string[]) {
+    const { student } = ctx;
+    if (student.workType !== "school") throw statusError("Optional subjects are only for schools", HttpStatus.BAD_REQUEST);
+    const running = await this.runningExam(student);
+    if (running) throw statusError(`${running.name} is going on. Ask your class teacher to change optional subjects.`, HttpStatus.CONFLICT);
+    const { courseIds } = await this.groups(student);
+    const names = await TestService.checkOptionalChoice(student.adminId, [...courseIds], subjects);
+    await StudentDetailsModel.updateOne({ _id: student._id }, { $set: { "schoolInfo.optionalSubjects": names } });
+    return this.optionalSubjects({ ...ctx, student: { ...student, schoolInfo: { ...student.schoolInfo, optionalSubjects: names } } });
   }
 
   /** Published results only: marks, percentage, grade and rank among everyone who sat the paper. */

@@ -13,6 +13,7 @@ const fields = Joi.object({
   name: Joi.string().trim().max(60).required(),
   code: Joi.string().trim().max(20).allow("", null).optional(),
   periodsPerWeek: Joi.number().integer().min(1).max(60).allow(null).optional(),
+  optional: Joi.boolean().optional(),
   sections: sections.default([]),
   status: Joi.string().valid(...subjectStatuses).optional(),
 });
