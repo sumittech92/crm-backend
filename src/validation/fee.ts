@@ -2,6 +2,7 @@ import Joi from "joi";
 import HttpStatus from "http-status-codes";
 import { sendErrorResponse } from "../utilis/response.js";
 import { paymentModes } from "../model/fee/fee.js";
+import { validateWith } from "../utilis/records.js";
 
 const day = Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}$/).messages({ "string.pattern.base": "{#label} must be YYYY-MM-DD" });
 const studentIds = Joi.array().items(Joi.string().trim().pattern(/^\d{6}$/)).min(1).max(500).unique();
@@ -48,3 +49,14 @@ const validateWithSchema = (schema, req, res, next) => {
 export const validateCreateFee = (req, res, next) => validateWithSchema(createFeeSchema, req, res, next);
 export const validateCollectFee = (req, res, next) => validateWithSchema(collectFeeSchema, req, res, next);
 export const validateUpdateFee = (req, res, next) => validateWithSchema(updateFeeSchema, req, res, next);
+
+// Portal payments: the office's reject reason, and the institute's payment details shown in the portal.
+export const validateRejectSubmission = validateWith(Joi.object({ reason: Joi.string().trim().max(300).allow("", null).optional() }));
+export const validateFeeSettings = validateWith(Joi.object({
+  upiId: Joi.string().trim().max(80).pattern(/^[\w.-]+@[\w.-]+$/).allow("", null).optional().messages({ "string.pattern.base": "UPI ID must look like name@bank" }),
+  accountName: Joi.string().trim().max(100).allow("", null).optional(),
+  accountNumber: Joi.string().trim().pattern(/^\d{6,20}$/).allow("", null).optional().messages({ "string.pattern.base": "Account number must be 6–20 digits" }),
+  ifsc: Joi.string().trim().pattern(/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/).allow("", null).optional().messages({ "string.pattern.base": "IFSC must look like HDFC0001234" }),
+  bankName: Joi.string().trim().max(100).allow("", null).optional(),
+  note: Joi.string().trim().max(300).allow("", null).optional(),
+}).min(1));

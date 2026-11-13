@@ -9,9 +9,8 @@ import FeeModel from "../../model/fee/fee.js";
 import AttendanceModel from "../../model/attendance/attendance.js";
 import Batch from "../../model/teacher/batchModel.js";
 import Course from "../../model/teacher/courseModel.js";
-import Subject from "../../model/subject/subject.js";
 import { BatchService } from "../teacher/batchServices.js";
-import { StaffActor } from "../../utilis/staffAccess.js";
+import { StaffActor, teacherSectionIds } from "../../utilis/staffAccess.js";
 import { todayKey } from "../../utilis/ownerScope.js";
 
 const statusError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
@@ -52,8 +51,8 @@ export class StudentInfoService {
       workType,
     });
 
+    let profile;
     try {
-      let profile;
       for (let attempt = 0; attempt < 10; attempt += 1) {
         try {
           profile = await StudentDetailsModel.create({
@@ -77,10 +76,12 @@ export class StudentInfoService {
           if (error.code !== 11000 || !error.keyPattern?.studentCode || attempt === 9) throw error;
         }
       }
+      if (input.parentLogin?.enabled) await this.linkParent(profile.toObject(), input.parentLogin.password);
       const safeAuth = auth.toObject();
       delete safeAuth.password;
       return { id: profile.studentCode, user: safeAuth, student: profile };
     } catch (error) {
+      if (profile) await StudentDetailsModel.deleteOne({ _id: profile._id });
       await AuthModel.deleteOne({ _id: auth._id });
       throw error;
     }
@@ -110,6 +111,12 @@ export class StudentInfoService {
     const existingStudent = await this.findStudentByIdentifier(studentId, scope);
     if (!existingStudent) throw new Error("Student not found");
     const authId = existingStudent.studentId.toString();
+    if (input.password) await AuthClass.resetPassword(authId, input.password);
+    // Parent login follows the parent mobile: link (or re-link after a number change) before saving, so a problem stops the save.
+    const parentsInfo = { ...existingStudent.toObject().parentsInfo, ...(input.parentsInfo || {}) };
+    const wantsParent = input.parentLogin ? input.parentLogin.enabled : !!existingStudent.parentId;
+    if (wantsParent) await this.linkParent({ ...existingStudent.toObject(), parentsInfo }, input.parentLogin?.password);
+    else if (existingStudent.parentId) await this.unlinkParent(existingStudent.toObject());
     if (input.feePlan !== undefined) checkFeePlan({ ...existingStudent.toObject().feePlan, ...input.feePlan });
     const profileFields = ["fullName", "profileImage", "gender", "dateOfBirth", "status", "feePlan", "parentsInfo", "address", "schoolInfo", "coachingInfo"];
     const profileUpdate: Record<string, any> = {};
@@ -152,27 +159,19 @@ export class StudentInfoService {
     const student = await StudentDetailsModel.findByIdAndDelete(existingStudent._id);
     if (!student) throw new Error("Student not found");
     await AuthModel.updateOne({ _id: existingStudent.studentId, role: "student" }, { $set: { isDeleted: true, accessToken: null } });
+    if (existingStudent.parentId) await this.removeParentIfUnused(existingStudent.parentId);
     return { message: "Student deleted successfully", student };
   }
 
-  /**
-   * Sections / batches a teacher works with. School: sections they are class teacher of or teach a subject in.
-   * Coaching: their batches. Each comes with its class / course name for matching students.
-   */
+  /** The teacher's sections / batches with their class / course names, for matching students. */
   private static async teacherBatches(actor: StaffActor) {
-    const teacherId = actor.teacher?._id;
-    if (!teacherId) return [];
-    const subjectBatchIds = actor.workType === "school"
-      ? (await Subject.find({ adminId: actor.adminId, "sections.teacherId": teacherId }).select("sections").lean())
-        .flatMap(subject => subject.sections.filter(section => String(section.teacherId) === String(teacherId)).map(section => section.batchId))
-      : [];
-    const batches = await Batch.find({ adminId: actor.adminId, $or: [{ teacherIds: teacherId }, { _id: { $in: subjectBatchIds } }] }).lean();
+    const batches = await Batch.find({ _id: { $in: await teacherSectionIds(actor) } }).lean();
     const courses = new Map((await Course.find({ _id: { $in: batches.map(batch => batch.courseId) } }).select("name").lean()).map(course => [String(course._id), course.name]));
     return batches.map(batch => ({ batch, courseName: courses.get(String(batch.courseId)) }));
   }
 
-  /** Owners see every student of the institute; teachers only students of their sections / batches. */
-  private static async visibleTo(students: Record<string, any>[], actor: StaffActor) {
+  /** Owners see every student of the institute; teachers only students of their sections / batches (also used by attendance). */
+  static async visibleTo(students: Record<string, any>[], actor: StaffActor) {
     if (actor.role !== "teacher") return students;
     const batches = await this.teacherBatches(actor);
     return students.filter(student => batches.some(({ batch, courseName }) => BatchService.studentInBatch(student, batch, courseName)));
@@ -228,5 +227,40 @@ export class StudentInfoService {
     const [visible] = await this.visibleTo([student.toObject()], actor);
     if (!visible) throw new Error("Student not found");
     return (await this.present([visible], actor))[0];
+  }
+
+  /**
+   * Gives the student's parent a login on the parent mobile. Siblings with the same parent mobile share one parent account;
+   * a new account needs a password, an existing one keeps its password unless a new one is given.
+   */
+  private static async linkParent(student: Record<string, any>, password?: string | null) {
+    const phoneNumber = String(student.parentsInfo?.phoneNumber || "").trim();
+    const countryCode = String(student.parentsInfo?.countryCode || "+91").trim();
+    if (!phoneNumber) throw statusError("Add the parent's mobile number to give the parent a login", HttpStatus.BAD_REQUEST);
+    let parent = await AuthModel.findOne({ role: "parent", countryCode, phoneNumber, isDeleted: false });
+    if (!parent) {
+      if (!password) throw statusError("Set a password for the parent login", HttpStatus.BAD_REQUEST);
+      if (await AuthModel.exists({ isDeleted: false, countryCode, phoneNumber })) throw statusError("The parent mobile number is already used by another account", HttpStatus.CONFLICT);
+      parent = await AuthModel.create({
+        fullName: student.parentsInfo?.fatherName || student.parentsInfo?.motherName || "Parent", countryCode, phoneNumber,
+        password: await AuthClass.hashSecret(password), role: "parent", workType: student.workType,
+      });
+    } else if (password) {
+      await AuthModel.updateOne({ _id: parent._id }, { $set: { password: await AuthClass.hashSecret(password), failedLoginAttempts: 0 } });
+    }
+    const previous = student.parentId && String(student.parentId) !== String(parent._id) ? student.parentId : null;
+    await StudentDetailsModel.updateOne({ _id: student._id }, { $set: { parentId: parent._id } });
+    if (previous) await this.removeParentIfUnused(previous);
+  }
+
+  private static async unlinkParent(student: Record<string, any>) {
+    await StudentDetailsModel.updateOne({ _id: student._id }, { $set: { parentId: null } });
+    await this.removeParentIfUnused(student.parentId);
+  }
+
+  /** A parent account with no children left is closed. */
+  private static async removeParentIfUnused(parentId: unknown) {
+    if (await StudentDetailsModel.exists({ parentId })) return;
+    await AuthModel.updateOne({ _id: parentId, role: "parent" }, { $set: { isDeleted: true, accessToken: null } });
   }
 }

@@ -37,3 +37,16 @@ export const deleteTask = async (req, res) => {
     return sendSuccessResponse(res, "Deleted successfully", await TaskService.remove(req.params.id, await staffActor(req)));
   } catch (error) { return handleError(res, error, "Task deletion error"); }
 };
+
+// Teacher: students of the assignment's section / batch and what each submitted.
+export const getTaskSubmissions = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Submissions retrieved successfully", await TaskService.submissions(req.params.id, await staffActor(req)));
+  } catch (error) { return handleError(res, error, "Task submissions error"); }
+};
+
+export const reviewTaskSubmission = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Submission updated", await TaskService.review(req.params.id, req.params.studentCode, req.body, await staffActor(req)));
+  } catch (error) { return handleError(res, error, "Task submission review error"); }
+};

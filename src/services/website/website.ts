@@ -42,9 +42,10 @@ export class WebsiteService {
 
   /** The website of the institute a teacher or student belongs to (logo, name and office contact in their portal). */
   static async getForMember(user: { _id: unknown; role?: string | null }) {
+    // Parents belong to their children's institute.
     const profile = user.role === "teacher"
       ? await Teacher.findOne({ teacherId: user._id }).select("adminId").lean()
-      : await StudentDetailsModel.findOne({ studentId: user._id }).select("adminId").lean();
+      : await StudentDetailsModel.findOne(user.role === "parent" ? { parentId: user._id } : { studentId: user._id }).select("adminId").lean();
     const owner = profile?.adminId && await AuthModel.findOne({ _id: profile.adminId, role: "admin", isDeleted: false }).select("fullName instituteName workType").lean();
     if (!owner) throw statusError("Institute not found", HttpStatus.NOT_FOUND);
     const website = await Website.findOne({ adminId: owner._id }).select(SECTIONS.join(" ")).lean();

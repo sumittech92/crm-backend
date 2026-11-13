@@ -1,6 +1,7 @@
 import HttpStatus from "http-status-codes";
 import Subject from "../../model/subject/subject.js";
 import Period from "../../model/timetable/timetable.js";
+import Syllabus from "../../model/syllabus/syllabus.js";
 import Course from "../../model/teacher/courseModel.js";
 import Batch from "../../model/teacher/batchModel.js";
 import Teacher from "../../model/teacher/teacherInfo.js";
@@ -124,6 +125,8 @@ export class SubjectService {
     await this.checkTimetable(existing, next, moved);
     const saved = await Subject.findByIdAndUpdate(existing._id, { $set: data }, { new: true, runValidators: true }).lean();
     await this.syncNames(saved, existing);
+    // The class's syllabus for this subject follows a rename.
+    if (saved.name !== existing.name && !moved) await Syllabus.updateMany({ adminId: existing.adminId, courseId: existing.courseId, subject: sameName(existing.name) }, { $set: { subject: saved.name } });
     return (await this.present([saved]))[0];
   }
 

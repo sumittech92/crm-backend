@@ -5,7 +5,7 @@ import Course from "../../model/teacher/courseModel.js";
 import Batch from "../../model/teacher/batchModel.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
 import { parseDay, todayKey } from "../../utilis/ownerScope.js";
-import { StaffActor, actorScope, isOwnerLike, teacherBatchIds } from "../../utilis/staffAccess.js";
+import { StaffActor, actorScope, isOwnerLike, teacherSectionIds } from "../../utilis/staffAccess.js";
 
 const statusError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
 const dayKey = (date: Date | string) => new Date(date).toISOString().slice(0, 10);
@@ -92,7 +92,7 @@ export class NoticeService {
     if (!actor.adminId || !actor.workType) throw statusError("Only an Owner or teacher can post notices", HttpStatus.FORBIDDEN);
     const defaults = { audience: actor.role === "teacher" ? "students" : "everyone", publishDate: todayKey() };
     const data = { adminId: actor.adminId, workType: actor.workType, createdBy: actor.userId, ...await this.prepare({ ...defaults, ...input, publishDate: input.publishDate || defaults.publishDate }, actor) };
-    const myBatches = await teacherBatchIds(actor);
+    const myBatches = await teacherSectionIds(actor);
     if (!this.canManage(data, actor, myBatches)) throw statusError("Teachers can post notices to students of batches / sections they teach", HttpStatus.FORBIDDEN);
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
@@ -109,13 +109,13 @@ export class NoticeService {
     const match = codeOrId(identifier, "noticeCode");
     if (!match) throw statusError("Invalid notice ID", HttpStatus.BAD_REQUEST);
     const notice = await Notice.findOne({ ...match, ...actorScope(actor) }).lean();
-    const myBatches = await teacherBatchIds(actor);
+    const myBatches = await teacherSectionIds(actor);
     if (!notice || !this.canView(notice, actor, myBatches, await this.teacherCourses(myBatches))) throw statusError("Notice not found", HttpStatus.NOT_FOUND);
     return { notice, myBatches };
   }
 
   static async getAllNotices(actor: StaffActor) {
-    const myBatches = await teacherBatchIds(actor);
+    const myBatches = await teacherSectionIds(actor);
     const myCourses = await this.teacherCourses(myBatches);
     const notices = (await Notice.find(actorScope(actor)).sort({ pinned: -1, publishDate: -1, createdAt: -1 }).lean())
       .filter(notice => this.canView(notice, actor, myBatches, myCourses));

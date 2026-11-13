@@ -1,4 +1,5 @@
 import Batch from "../model/teacher/batchModel.js";
+import Subject from "../model/subject/subject.js";
 import Teacher from "../model/teacher/teacherInfo.js";
 import { resolveOwnerScope } from "./ownerScope.js";
 
@@ -29,6 +30,20 @@ export const staffActor = async (req): Promise<StaffActor> => {
 export const teacherBatchIds = async (actor: StaffActor): Promise<string[]> => {
   if (actor.role !== "teacher" || !actor.teacher) return [];
   return (await Batch.find({ adminId: actor.adminId, teacherIds: actor.teacher._id }).select("_id").lean()).map(batch => String(batch._id));
+};
+
+/**
+ * Every section / batch the teacher works with: their batches / class-teacher sections, plus (school) sections where
+ * they teach a subject under Subjects. Used for students, attendance, notices and study material; exams keep teacherBatchIds.
+ */
+export const teacherSectionIds = async (actor: StaffActor): Promise<string[]> => {
+  if (actor.role !== "teacher" || !actor.teacher) return [];
+  const own = await teacherBatchIds(actor);
+  if (actor.workType !== "school") return own;
+  const teacherId = String(actor.teacher._id);
+  const subjects = await Subject.find({ adminId: actor.adminId, "sections.teacherId": actor.teacher._id }).select("sections").lean();
+  const taught = subjects.flatMap(subject => subject.sections.filter(section => String(section.teacherId) === teacherId).map(section => String(section.batchId)));
+  return [...new Set([...own, ...taught])];
 };
 
 export const isOwnerLike = (actor: StaffActor) => actor.role === "admin" || actor.role === "superAdmin";

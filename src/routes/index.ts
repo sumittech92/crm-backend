@@ -21,6 +21,8 @@ import subjectRoutes from "./subject/subject.js";
 import timetableRoutes from "./timetable/timetable.js";
 import eventRoutes from "./event/event.js";
 import taskRoutes from "./task/task.js";
+import portalRoutes from "./portal/portal.js";
+import syllabusRoutes from "./syllabus/syllabus.js";
 
 const router = express.Router();
 
@@ -46,5 +48,7 @@ router.use("/subject", subjectRoutes);
 router.use("/timetable", timetableRoutes);
 router.use("/event", eventRoutes);
 router.use("/task", taskRoutes);
+router.use("/portal", portalRoutes);
+router.use("/syllabus", syllabusRoutes);
 
  export default router;

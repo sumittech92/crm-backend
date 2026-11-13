@@ -48,6 +48,16 @@ export class AuthClass {
     return AuthModel.updateOne({ _id: userId }, { $set: { accessToken, lastLogin: Date.now(), failedLoginAttempts: 0 } });
   }
 
+  /**
+   * Owner sets a new login password for one of their teachers / students (or a sample account). A lock from too many
+   * wrong passwords is lifted too; a block the super admin set stays.
+   */
+  static async resetPassword(userId: unknown, password: string) {
+    const user = await AuthModel.findById(userId).select("failedLoginAttempts").lean();
+    const lockedOut = (user?.failedLoginAttempts ?? 0) >= MAX_FAILED_LOGINS;
+    await AuthModel.updateOne({ _id: userId }, { $set: { password: await this.hashSecret(password), failedLoginAttempts: 0, ...(lockedOut ? { isBlocked: false } : {}) } });
+  }
+
   /** Counts a wrong password and blocks the account on the MAX_FAILED_LOGINS-th one in a row. Returns the new count. */
   static async recordFailedLogin(userId: unknown) {
     const user = await AuthModel.findOneAndUpdate(

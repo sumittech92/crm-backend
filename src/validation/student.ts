@@ -12,6 +12,11 @@ const studentFieldsSchema = Joi.object({
   gender: Joi.string().valid("male", "female", "other").allow(null).optional(),
   dateOfBirth: Joi.date().max("now").allow(null).optional().messages({ "date.max": "Date of birth cannot be in the future" }),
   status: Joi.string().valid("active", "inactive").optional(),
+  // Parent login on the parent mobile: enabled = has a login; password sets / changes it (required for a new parent account).
+  parentLogin: Joi.object({
+    enabled: Joi.boolean().required(),
+    password: Joi.string().min(8).max(64).allow("", null).optional(),
+  }).optional(),
   feePlan: Joi.object({
     amount: Joi.number().min(0).max(10000000).allow(null).optional(),
     discount: Joi.number().min(0).max(10000000).optional(),
@@ -53,7 +58,8 @@ const createStudentSchema = studentFieldsSchema.xor("schoolInfo", "coachingInfo"
 
 const updateStudentSchema = studentFieldsSchema
   .fork(["fullName", "email", "countryCode", "phoneNumber", "password"], (schema) => schema.optional())
-  .fork(["password"], (schema) => schema.forbidden())
+  // Optional on update: the owner sets a new login password.
+  .fork(["password"], () => Joi.string().min(8).max(64).optional())
   .min(1);
 
 const validateWithSchema = (schema, req, res, next) => {

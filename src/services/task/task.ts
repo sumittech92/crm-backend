@@ -4,6 +4,9 @@ import Batch from "../../model/teacher/batchModel.js";
 import Course from "../../model/teacher/courseModel.js";
 import Subject from "../../model/subject/subject.js";
 import AuthModel from "../../model/Auth/auth.js";
+import TaskSubmission from "../../model/task/taskSubmission.js";
+import StudentDetailsModel from "../../model/students/studentInfo.js";
+import { BatchService } from "../teacher/batchServices.js";
 import { parseDay, todayKey } from "../../utilis/ownerScope.js";
 import { StaffActor, actorScope, isOwnerLike } from "../../utilis/staffAccess.js";
 import { isOwnStoredFile, removeStoredFile } from "../../utilis/storedFiles.js";
@@ -112,6 +115,9 @@ export class TaskService {
     if (!this.canManage(existing, actor)) throw statusError("Only the teacher who gave this can delete it", HttpStatus.FORBIDDEN);
     await Task.deleteOne({ _id: existing._id });
     removeStoredFile(existing.attachment?.url, "materials");
+    const submissions = await TaskSubmission.find({ task: existing._id }).select("file").lean();
+    submissions.forEach(submission => removeStoredFile(submission.file?.url, "portal"));
+    await TaskSubmission.deleteMany({ task: existing._id });
     return { message: "Deleted successfully", task: existing };
   }
 
@@ -128,6 +134,9 @@ export class TaskService {
     const courses = new Map((await Course.find({ _id: { $in: [...batches.values()].map(batch => batch.courseId) } }).select("courseCode name").lean()).map(course => [String(course._id), course]));
     const creators = new Map((await AuthModel.find({ _id: { $in: tasks.map(task => task.createdBy) } }).select("fullName").lean()).map(user => [String(user._id), user.fullName]));
     const today = todayKey();
+    // Assignments: how many of the section's / batch's students have submitted.
+    const counts = new Map((await TaskSubmission.aggregate([{ $match: { task: { $in: tasks.map(task => task._id) } } }, { $group: { _id: "$task", count: { $sum: 1 } } }])).map(row => [String(row._id), row.count]));
+    const strength = new Map((await BatchService.getAllBatches({ adminId: tasks[0].adminId })).map(batch => [String(batch._id), batch.students]));
     return tasks.map(task => {
       const batch = batches.get(String(task.batchId));
       const course = batch ? courses.get(String(batch.courseId)) : undefined;
@@ -138,7 +147,84 @@ export class TaskService {
         batch: batch ? { batchCode: batch.batchCode, name: batch.name, label: this.label(batch, course?.name) } : null,
         course: course ? { courseCode: course.courseCode, name: course.name } : null,
         createdBy: creators.get(String(task.createdBy)) ?? null, canManage: this.canManage(task, actor), createdAt: task.createdAt,
+        submitted: counts.get(String(task._id)) ?? 0, students: strength.get(String(task.batchId)) ?? 0,
       };
     });
+  }
+
+  /** Students of the task's section / batch. */
+  static async roster(task: Record<string, any>) {
+    const batch = await Batch.findById(task.batchId).lean();
+    if (!batch) return [];
+    const course = await Course.findById(batch.courseId).select("name").lean();
+    const students = await StudentDetailsModel.find({ adminId: task.adminId, workType: task.workType }).select("studentCode fullName schoolInfo coachingInfo workType").lean();
+    return students.filter(student => BatchService.studentInBatch(student, batch, course?.name)).sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || "")));
+  }
+
+  /** Teacher: every student of the assignment's section / batch with their submission (or none yet). */
+  static async submissions(identifier: string, actor: StaffActor) {
+    const task = await findScoped(Task, "taskCode", identifier, actorScope(actor), "homework / assignment");
+    if (!this.canManage(task, actor)) throw statusError("Only the teacher who gave this can see its submissions", HttpStatus.FORBIDDEN);
+    const [students, submissions] = await Promise.all([this.roster(task), TaskSubmission.find({ task: task._id }).lean()]);
+    const byStudent = new Map(submissions.map(submission => [String(submission.student), submission]));
+    return {
+      taskCode: task.taskCode, title: task.title, kind: task.kind, dueDate: task.dueDate,
+      students: students.map(student => {
+        const submission = byStudent.get(String(student._id));
+        return {
+          studentCode: student.studentCode, fullName: student.fullName, rollNo: student.schoolInfo?.rollNumber ?? null,
+          submission: submission ? { file: submission.file, submittedAt: submission.updatedAt, late: dayKey(submission.updatedAt) > dayKey(task.dueDate), status: submission.status, remark: submission.remark } : null,
+        };
+      }),
+    };
+  }
+
+  /** Teacher marks a submission checked (or back to submitted), with an optional remark the student sees. */
+  static async review(identifier: string, studentCode: string, input: { checked: boolean; remark?: string | null }, actor: StaffActor) {
+    const task = await findScoped(Task, "taskCode", identifier, actorScope(actor), "homework / assignment");
+    if (!this.canManage(task, actor)) throw statusError("Only the teacher who gave this can check its submissions", HttpStatus.FORBIDDEN);
+    const student = await StudentDetailsModel.findOne({ adminId: task.adminId, studentCode }).select("_id").lean();
+    const submission = student && await TaskSubmission.findOne({ task: task._id, student: student._id });
+    if (!submission) throw statusError("This student has not submitted yet", HttpStatus.NOT_FOUND);
+    submission.status = input.checked ? "checked" : "submitted";
+    if (input.remark !== undefined) submission.remark = input.remark || null;
+    submission.checkedBy = input.checked ? actor.userId as any : null;
+    submission.checkedAt = input.checked ? new Date() : null;
+    await submission.save();
+    return { studentCode, status: submission.status, remark: submission.remark };
+  }
+
+  /** Portal: homework and assignments for the student's sections / batches, with the student's own submission. */
+  static async forStudent(student: Record<string, any>) {
+    const batches = await Batch.find({ adminId: student.adminId, workType: student.workType }).lean();
+    const courses = new Map((await Course.find({ _id: { $in: batches.map(batch => batch.courseId) } }).select("name").lean()).map(course => [String(course._id), course.name]));
+    const mine = batches.filter(batch => BatchService.studentInBatch(student, batch, courses.get(String(batch.courseId))));
+    if (!mine.length) return [];
+    const tasks = await Task.find({ batchId: { $in: mine.map(batch => batch._id) } }).sort({ dueDate: 1, createdAt: -1 }).lean();
+    const submissions = new Map((await TaskSubmission.find({ task: { $in: tasks.map(task => task._id) }, student: student._id }).lean()).map(submission => [String(submission.task), submission]));
+    const today = todayKey();
+    return tasks.map(task => {
+      const submission = submissions.get(String(task._id));
+      return {
+        taskCode: task.taskCode, kind: task.kind, title: task.title, subject: task.subject, description: task.description,
+        givenOn: task.createdAt, dueDate: task.dueDate, attachment: task.attachment, status: task.status,
+        overdue: task.status === "assigned" && dayKey(task.dueDate) < today,
+        submission: submission ? { file: submission.file, submittedAt: submission.updatedAt, status: submission.status, remark: submission.remark } : null,
+      };
+    });
+  }
+
+  /** Portal: a student uploads (or replaces) their file for an open assignment. */
+  static async submit(student: Record<string, any>, taskCode: string, file: { url: string; name: string }) {
+    const task = (await this.forStudent(student)).find(item => item.taskCode === taskCode);
+    if (!task || task.kind !== "assignment") throw statusError("Assignment not found", HttpStatus.NOT_FOUND);
+    if (task.status === "closed") throw statusError("This assignment is closed", HttpStatus.CONFLICT);
+    if (task.submission?.status === "checked") throw statusError("Your teacher has already checked this submission", HttpStatus.CONFLICT);
+    if (!isOwnStoredFile(file.url, "portal", student.adminId)) throw statusError("Upload the file through the file upload first", HttpStatus.BAD_REQUEST);
+    const saved = await Task.findOne({ taskCode }).select("_id").lean();
+    const previous = await TaskSubmission.findOne({ task: saved._id, student: student._id }).lean();
+    await TaskSubmission.updateOne({ task: saved._id, student: student._id }, { $set: { file, status: "submitted", adminId: student.adminId } }, { upsert: true });
+    if (previous && previous.file.url !== file.url) removeStoredFile(previous.file.url, "portal");
+    return (await this.forStudent(student)).find(item => item.taskCode === taskCode);
   }
 }

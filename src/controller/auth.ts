@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { AuthClass, MAX_FAILED_LOGINS } from "../services/Auth/auth.js";
 import AuthModel from "../model/Auth/auth.js";
 import { sendErrorResponse, sendSuccessResponse } from "../utilis/response.js";
+import { SampleDataService } from "../services/sample/sampleData.js";
 import HttpStatus from "http-status-codes";
 import { isValidDomain, normalizeDomain } from "../utilis/domain.js";
 
@@ -29,6 +30,11 @@ const createAccount = async (req, res, role: "student" | "admin" | "superAdmin",
       fullName, email: normalizedEmail, password: await AuthClass.hashSecret(password),
       countryCode, phoneNumber: normalizedPhone, role, workType, instituteName,
     });
+    // New owners start with one sample record in each module (failures are logged, never block the account).
+    if (role === "admin") {
+      const baseUrl = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || `${req.protocol}://${req.get("host")}`;
+      await SampleDataService.seed({ _id: user._id, fullName: user.fullName, workType }, { baseUrl });
+    }
     return sendSuccessResponse(res, message, user, HttpStatus.CREATED);
   } catch (error) {
     if (error.code === 11000) {

@@ -6,6 +6,7 @@ import multer from "multer";
 import HttpStatus from "http-status-codes";
 import { verifyAuthToken, requireOwner, requireStaff } from "../../middleware/authMiddleware.js";
 import { resolveOwnerScope } from "../../utilis/ownerScope.js";
+import StudentDetailsModel from "../../model/students/studentInfo.js";
 import { sendErrorResponse, sendSuccessResponse } from "../../utilis/response.js";
 
 export const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
@@ -137,6 +138,50 @@ router.post("/media", verifyAuthToken, requireStaff, async (req, res) => {
     if (!file) return sendErrorResponse(res, "Choose a photo to upload", HttpStatus.BAD_REQUEST);
     const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || `${req.protocol}://${req.get("host")}`;
     return sendSuccessResponse(res, "Photo uploaded", { url: `${base}/uploads/media/${req.mediaOwnerId}/${file.filename}`, size: file.size }, HttpStatus.CREATED);
+  });
+});
+
+// Student / parent files from the portal: assignment work and fee payment proof (PDF, Word or image up to 10 MB),
+// stored under uploads/portal/<ownerId>/.
+const PORTAL_TYPES: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+};
+const MAX_PORTAL_BYTES = 10 * 1024 * 1024;
+const portalUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = path.join(UPLOAD_ROOT, "portal", String(req.portalOwnerId));
+      fs.mkdir(dir, { recursive: true }, (error) => cb(error, dir));
+    },
+    filename: (_req, file, cb) => cb(null, `${randomUUID()}${PORTAL_TYPES[file.mimetype]}`),
+  }),
+  limits: { fileSize: MAX_PORTAL_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (PORTAL_TYPES[file.mimetype]) return cb(null, true);
+    return cb(Object.assign(new Error("Upload a PDF, DOC, DOCX, JPG or PNG file"), { statusCode: HttpStatus.BAD_REQUEST }));
+  },
+});
+
+router.post("/portal", verifyAuthToken, async (req, res) => {
+  if (req.role !== "student" && req.role !== "parent") return sendErrorResponse(res, "Only students and parents upload here", HttpStatus.FORBIDDEN);
+  const profile = await StudentDetailsModel.findOne(req.role === "parent" ? { parentId: req.userData._id } : { studentId: req.userData._id }).select("adminId").lean();
+  if (!profile?.adminId) return sendErrorResponse(res, "Your account is not linked to an institute", HttpStatus.FORBIDDEN);
+  req.portalOwnerId = profile.adminId;
+  portalUpload.single("file")(req, res, (error) => {
+    if (error) {
+      const message = error.code === "LIMIT_FILE_SIZE" ? "Files must be 10 MB or smaller" : error.statusCode ? error.message : "Upload failed";
+      if (!error.statusCode && error.code !== "LIMIT_FILE_SIZE") console.error("Portal upload error:", error);
+      return sendErrorResponse(res, message, error.statusCode ?? HttpStatus.BAD_REQUEST);
+    }
+    const file = req.file;
+    if (!file) return sendErrorResponse(res, "Choose a file to upload", HttpStatus.BAD_REQUEST);
+    const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || `${req.protocol}://${req.get("host")}`;
+    const name = String(file.originalname || "file").replace(/[\\/]/g, "_").slice(0, 200);
+    return sendSuccessResponse(res, "File uploaded", { url: `${base}/uploads/portal/${req.portalOwnerId}/${file.filename}`, name, size: file.size }, HttpStatus.CREATED);
   });
 });
 

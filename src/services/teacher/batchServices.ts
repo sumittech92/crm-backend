@@ -9,6 +9,7 @@ import Material from "../../model/material/material.js";
 import Subject from "../../model/subject/subject.js";
 import Period from "../../model/timetable/timetable.js";
 import Task from "../../model/task/task.js";
+import { SyllabusProgress } from "../../model/syllabus/syllabus.js";
 import type { StaffScope } from "../../utilis/ownerScope.js";
 import { escapeRegex, parseDay } from "../../utilis/ownerScope.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
@@ -249,6 +250,7 @@ export class BatchService {
     if (periods > 0) throw statusError(`${periods} timetable period${periods === 1 ? " uses" : "s use"} this ${label}. Remove ${periods === 1 ? "it" : "them"} first, or mark the ${label} Inactive.`, HttpStatus.CONFLICT);
     if (await Task.exists({ batchId: existing._id })) throw statusError(`Homework or assignments were given to this ${label}. Mark it Inactive instead of deleting it.`, HttpStatus.CONFLICT);
     await Batch.deleteOne({ _id: existing._id });
+    await SyllabusProgress.deleteMany({ batchId: existing._id });
     await Subject.updateMany({ "sections.batchId": existing._id }, { $pull: { sections: { batchId: existing._id } } });
     return { message: "Batch deleted successfully", batch: existing };
   }

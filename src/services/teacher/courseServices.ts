@@ -6,6 +6,7 @@ import Batch from "../../model/teacher/batchModel.js";
 import Test from "../../model/test/test.js";
 import Material from "../../model/material/material.js";
 import Subject from "../../model/subject/subject.js";
+import Syllabus, { SyllabusProgress } from "../../model/syllabus/syllabus.js";
 import type { StaffScope } from "../../utilis/ownerScope.js";
 import { escapeRegex } from "../../utilis/ownerScope.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
@@ -143,6 +144,9 @@ export class CourseService {
     if (await Test.exists({ courseId: existing._id }) || await Material.exists({ courseId: existing._id })) throw statusError("Tests or study materials use this course. Mark it Inactive instead of deleting it.", HttpStatus.CONFLICT);
     const subjects = await Subject.countDocuments({ courseId: existing._id });
     if (subjects > 0) throw statusError(`Delete its ${subjects} subject${subjects === 1 ? "" : "s"} under Subjects first.`, HttpStatus.CONFLICT);
+    const syllabi = await Syllabus.find({ courseId: existing._id }).select("_id").lean();
+    await SyllabusProgress.deleteMany({ syllabusId: { $in: syllabi.map(syllabus => syllabus._id) } });
+    await Syllabus.deleteMany({ courseId: existing._id });
     await Course.deleteOne({ _id: existing._id });
     return { message: "Course deleted successfully", course: existing };
   }

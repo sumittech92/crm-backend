@@ -79,7 +79,8 @@ export const createTeacherValidator = teacherFieldsSchema
 // Same fields as create, all optional; the password is only set at creation.
 const updateTeacherValidator = teacherFieldsSchema
   .fork(["fullName", "email", "countryCode", "phoneNumber"], (schema) => schema.optional())
-  .fork(["password"], (schema) => schema.forbidden())
+  // Optional on update: the owner sets a new login password.
+  .fork(["password"], () => Joi.string().min(8).max(64).optional())
   .oxor("schoolInfo", "coachingInfo")
   .min(1);
 

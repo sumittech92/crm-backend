@@ -166,7 +166,7 @@ export class TestService {
   }
 
   /** Students who sit the test: the batch (coaching) or the class / chosen sections (school). */
-  private static async roster(test: Record<string, any>) {
+  static async roster(test: Record<string, any>) {
     const course = await Course.findById(test.courseId).select("name").lean();
     const batches = test.batchIds.length ? await Batch.find({ _id: { $in: test.batchIds } }).lean() : [];
     const students = await StudentDetailsModel.find({ adminId: test.adminId, workType: test.workType })

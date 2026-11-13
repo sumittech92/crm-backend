@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import AttendanceModel, { AttendanceStatus } from "../../model/attendance/attendance.js";
 import StudentDetailsModel from "../../model/students/studentInfo.js";
 import { StaffScope, parseDay, parseMonth, studentPlacement, todayKey } from "../../utilis/ownerScope.js";
+import { StaffActor } from "../../utilis/staffAccess.js";
+import { StudentInfoService } from "../student/studentInfo.js";
 
 const STUDENT_FIELDS = "studentCode fullName workType adminId schoolInfo coachingInfo";
 
@@ -15,8 +17,10 @@ const groupName = (student: any) => {
 };
 
 export class AttendanceService {
-  private static students(scope: StaffScope) {
-    return StudentDetailsModel.find(scope).select(STUDENT_FIELDS).sort({ fullName: 1 }).lean();
+  /** Students in scope; a teacher gets only students of their sections / batches. */
+  private static async students(scope: StaffScope, actor?: StaffActor) {
+    const students = await StudentDetailsModel.find(scope).select(STUDENT_FIELDS).sort({ fullName: 1 }).lean();
+    return actor ? StudentInfoService.visibleTo(students, actor) : students;
   }
 
   /** Per-student counts between two dates. */
@@ -37,9 +41,9 @@ export class AttendanceService {
   }
 
   /** Daily register: every student in scope with their mark for the day (null when not marked yet). */
-  static async getRegister(scope: StaffScope, date: unknown) {
+  static async getRegister(scope: StaffScope, date: unknown, actor?: StaffActor) {
     const day = parseDay(date || todayKey());
-    const students = await this.students(scope);
+    const students = await this.students(scope, actor);
     const ids = students.map((student) => student._id);
     const monthStart = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), 1));
     const nextDay = new Date(day.getTime() + 86400000);
@@ -64,14 +68,18 @@ export class AttendanceService {
   }
 
   /** Save (or overwrite) the register for one day. Only students in scope can be marked. */
-  static async markAttendance(scope: StaffScope, markedBy: unknown, input: { date: string; records: { studentId: string; status: AttendanceStatus; note?: string | null }[] }) {
+  static async markAttendance(scope: StaffScope, markedBy: unknown, input: { date: string; records: { studentId: string; status: AttendanceStatus; note?: string | null }[] }, actor?: StaffActor) {
     const day = parseDay(input.date);
     if (day.toISOString().slice(0, 10) > todayKey()) throw new Error("Attendance cannot be saved for a future date");
     const codes = [...new Set(input.records.map((record) => record.studentId))];
-    const students = await StudentDetailsModel.find({ ...scope, studentCode: { $in: codes } }).select("studentCode workType adminId").lean();
+    const students = await StudentDetailsModel.find({ ...scope, studentCode: { $in: codes } }).select("studentCode workType adminId schoolInfo coachingInfo").lean();
     const byCode = new Map(students.map((student) => [student.studentCode, student]));
     const missing = codes.filter((code) => !byCode.has(code));
     if (missing.length) throw new Error(`Student not found: ${missing.join(", ")}`);
+    if (actor) {
+      const allowed = new Set((await StudentInfoService.visibleTo(students, actor)).map((student) => student.studentCode));
+      if (codes.some((code) => !allowed.has(code))) throw Object.assign(new Error("You can mark attendance only for students of your own sections / batches"), { statusCode: 403 });
+    }
 
     const result = await AttendanceModel.bulkWrite(input.records.map((record) => {
       const student = byCode.get(record.studentId);
@@ -89,9 +97,9 @@ export class AttendanceService {
   }
 
   /** Month grid: each student's mark per day, plus their rate for the month. */
-  static async getMonthly(scope: StaffScope, month: unknown) {
+  static async getMonthly(scope: StaffScope, month: unknown, actor?: StaffActor) {
     const range = parseMonth(month);
-    const students = await this.students(scope);
+    const students = await this.students(scope, actor);
     const ids = students.map((student) => student._id);
     const marks = await AttendanceModel.find({ student: { $in: ids }, date: { $gte: range.start, $lt: range.end } }).select("student date status").lean();
     const grid = new Map<string, Record<number, AttendanceStatus>>();
@@ -122,10 +130,10 @@ export class AttendanceService {
   }
 
   /** Institute-wide rate for the month, a daily trend, the rate per batch / section and last month's rate. */
-  static async getSummary(scope: StaffScope, month: unknown) {
+  static async getSummary(scope: StaffScope, month: unknown, actor?: StaffActor) {
     const range = parseMonth(month);
     const previousStart = new Date(Date.UTC(range.start.getUTCFullYear(), range.start.getUTCMonth() - 1, 1));
-    const students = await this.students(scope);
+    const students = await this.students(scope, actor);
     const ids = students.map((student) => student._id);
     const groupOf = new Map(students.map((student) => [student._id.toString(), groupName(student)]));
 
@@ -171,9 +179,10 @@ export class AttendanceService {
   }
 
   /** One student's month: counts and each marked day. */
-  static async getStudentHistory(scope: StaffScope, studentCode: string, month: unknown) {
+  static async getStudentHistory(scope: StaffScope, studentCode: string, month: unknown, actor?: StaffActor) {
     const range = parseMonth(month);
-    const student = await StudentDetailsModel.findOne({ ...scope, studentCode }).select(STUDENT_FIELDS).lean();
+    const found = await StudentDetailsModel.findOne({ ...scope, studentCode }).select(STUDENT_FIELDS).lean();
+    const student = found && actor ? (await StudentInfoService.visibleTo([found], actor))[0] : found;
     if (!student) throw new Error("Student not found");
     const records = await AttendanceModel.find({ student: student._id, date: { $gte: range.start, $lt: range.end } }).select("date status note").sort({ date: 1 }).lean();
     const count = (status: string) => records.filter((record) => record.status === status).length;

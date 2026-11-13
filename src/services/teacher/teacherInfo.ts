@@ -189,6 +189,7 @@ export class TeacherInfoService {
       }
     }
 
+    if (input.password) await AuthClass.resetPassword(authId, input.password);
     const allowedFields = ["joiningDate", "status", "profileImage", "gender", "schoolInfo", "coachingInfo"];
     const updateData: Record<string, any> = { ...accountUpdate };
     for (const field of allowedFields) {

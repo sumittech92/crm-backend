@@ -13,6 +13,8 @@ export interface StudentDocument extends mongoose.Document {
     status: "active" | "inactive";
     // The student's agreed fee (coaching: per month, school: per term) and discount / concession. Fees are still collected per period in the Fees module.
     feePlan: { amount: number | null; discount: number };
+    // Parent login (Auth, role "parent") the owner gave this student's parent; siblings with the same parent mobile share it.
+    parentId: mongoose.Types.ObjectId | null;
 
     parentsInfo: {
         fatherName: string | null;
@@ -105,6 +107,12 @@ const studentDetailsSchema = new mongoose.Schema<StudentDocument>(
         feePlan: {
             amount: { type: Number, default: null, min: 0 },
             discount: { type: Number, default: 0, min: 0 },
+        },
+        parentId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Auth",
+            default: null,
+            index: true,
         },
         // Parents information
         parentsInfo: {

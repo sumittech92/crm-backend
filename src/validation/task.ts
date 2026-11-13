@@ -16,3 +16,5 @@ const fields = Joi.object({
 export const validateCreateTask = validateWith(fields.required());
 // The kind (homework / assignment) is fixed once created.
 export const validateUpdateTask = validateWith(fields.fork(["title", "batchCode", "subject", "dueDate"], (schema) => schema.optional()).fork(["kind"], (schema) => schema.forbidden()).min(1));
+
+export const validateReviewSubmission = validateWith(Joi.object({ checked: Joi.boolean().required(), remark: Joi.string().trim().max(300).allow("", null).optional() }));

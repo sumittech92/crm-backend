@@ -6,7 +6,7 @@ import Material from "../../model/material/material.js";
 import Course from "../../model/teacher/courseModel.js";
 import Batch from "../../model/teacher/batchModel.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
-import { StaffActor, actorScope, isOwnerLike, teacherBatchIds, teachesSubject } from "../../utilis/staffAccess.js";
+import { StaffActor, actorScope, isOwnerLike, teacherSectionIds, teachesSubject } from "../../utilis/staffAccess.js";
 
 const statusError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
 const blankToNull = (value: unknown) => typeof value === "string" && !value.trim() ? null : value;
@@ -102,7 +102,7 @@ export class MaterialService {
     if (!actor.adminId || !actor.workType) throw statusError("Only an Owner or teacher can add materials", HttpStatus.FORBIDDEN);
     const data = { adminId: actor.adminId, workType: actor.workType, createdBy: actor.userId, status: "published", ...await this.prepare(input, actor) };
     if (data.status === "published") data.publishedAt ??= new Date();
-    const myBatches = await teacherBatchIds(actor);
+    const myBatches = await teacherSectionIds(actor);
     if (!this.canManage(data, actor, myBatches)) throw statusError("You can add materials only for batches / sections you teach", HttpStatus.FORBIDDEN);
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
@@ -119,13 +119,13 @@ export class MaterialService {
     const match = codeOrId(identifier, "materialCode");
     if (!match) throw statusError("Invalid material ID", HttpStatus.BAD_REQUEST);
     const material = await Material.findOne({ ...match, ...actorScope(actor) }).lean();
-    const myBatches = await teacherBatchIds(actor);
+    const myBatches = await teacherSectionIds(actor);
     if (!material || !this.canView(material, actor, myBatches, await this.teacherCourses(myBatches))) throw statusError("Material not found", HttpStatus.NOT_FOUND);
     return { material, myBatches };
   }
 
   static async getAllMaterials(actor: StaffActor, { status }: { status?: string } = {}) {
-    const myBatches = await teacherBatchIds(actor);
+    const myBatches = await teacherSectionIds(actor);
     const myCourses = await this.teacherCourses(myBatches);
     const materials = (await Material.find({ ...actorScope(actor), ...(status ? { status } : {}) }).sort({ createdAt: -1 }).lean())
       .filter(material => this.canView(material, actor, myBatches, myCourses));

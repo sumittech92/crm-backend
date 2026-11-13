@@ -31,7 +31,7 @@ export const publishMyWebsite = async (req, res) => {
 
 export const getMyInstituteWebsite = async (req, res) => {
   try {
-    if (req.role !== "teacher" && req.role !== "student") return sendErrorResponse(res, "Only teachers and students have an institute website", HttpStatus.FORBIDDEN);
+    if (!["teacher", "student", "parent"].includes(req.role)) return sendErrorResponse(res, "Only teachers, students and parents have an institute website", HttpStatus.FORBIDDEN);
     return sendSuccessResponse(res, "Website retrieved successfully", await WebsiteService.getForMember(req.userData));
   } catch (error) { return handleError(res, error, "Institute website error"); }
 };

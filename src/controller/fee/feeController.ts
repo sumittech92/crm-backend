@@ -2,6 +2,8 @@ import HttpStatus from "http-status-codes";
 import { sendErrorResponse, sendSuccessResponse } from "../../utilis/response.js";
 import { FeeService } from "../../services/fee/fee.js";
 import { resolveOwnerScope } from "../../utilis/ownerScope.js";
+import { FeeSubmissionService } from "../../services/fee/feeSubmission.js";
+import { handleError } from "../../utilis/records.js";
 
 const handleFeeError = (res, error, label) => {
   if (error.statusCode && error.statusCode < 500) return sendErrorResponse(res, error.message, error.statusCode);
@@ -51,4 +53,37 @@ export const deleteFee = async (req, res) => {
   try {
     return sendSuccessResponse(res, "Fee deleted successfully", await FeeService.deleteFee(await resolveOwnerScope(req), req.params.id));
   } catch (error) { return handleFeeError(res, error, "Fee deletion error"); }
+};
+
+// Portal payments waiting for (or after) the office's check. ?status=pending|approved|rejected
+export const getSubmissions = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Payment submissions retrieved successfully", await FeeSubmissionService.list(await resolveOwnerScope(req), { status: req.query.status }));
+  } catch (error) { return handleError(res, error, "Fee submission list error"); }
+};
+
+export const approveSubmission = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Payment approved and recorded", await FeeSubmissionService.approve(await resolveOwnerScope(req), req.params.id, req.userData._id));
+  } catch (error) { return handleError(res, error, "Fee submission approval error"); }
+};
+
+export const rejectSubmission = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Payment rejected", await FeeSubmissionService.reject(await resolveOwnerScope(req), req.params.id, req.userData._id, req.body.reason));
+  } catch (error) { return handleError(res, error, "Fee submission rejection error"); }
+};
+
+// Where students and parents send fees (UPI / bank details shown in the portal).
+export const getFeeSettings = async (req, res) => {
+  try {
+    const { adminId } = await resolveOwnerScope(req);
+    return sendSuccessResponse(res, "Payment details retrieved successfully", await FeeSubmissionService.getSettings(adminId));
+  } catch (error) { return handleError(res, error, "Fee settings error"); }
+};
+
+export const saveFeeSettings = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Payment details saved", await FeeSubmissionService.saveSettings(req.userData._id, req.body));
+  } catch (error) { return handleError(res, error, "Fee settings save error"); }
 };
