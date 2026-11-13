@@ -2,6 +2,7 @@ import HttpStatus from "http-status-codes";
 import mongoose from "mongoose";
 import AuthModel from "../../model/Auth/auth.js";
 import Teacher from "../../model/teacher/teacherInfo.js";
+import Subject from "../../model/subject/subject.js";
 import { AuthClass } from "../Auth/auth.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
 
@@ -214,6 +215,8 @@ export class TeacherInfoService {
     const teacher = await Teacher.findByIdAndDelete(existingTeacher._id);
     if (!teacher) throw new Error("Teacher not found");
     await AuthModel.updateOne({ _id: existingTeacher.teacherId, role: "teacher" }, { $set: { isDeleted: true, accessToken: null } });
+    // Their subjects stay, marked "not assigned" in each section until the owner picks another teacher.
+    await Subject.updateMany({ "sections.teacherId": existingTeacher._id }, { $set: { "sections.$[section].teacherId": null } }, { arrayFilters: [{ "section.teacherId": existingTeacher._id }] });
     return { message: "Teacher deleted successfully", teacher };
   }
 }

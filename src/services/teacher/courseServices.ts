@@ -5,6 +5,7 @@ import StudentDetailsModel from "../../model/students/studentInfo.js";
 import Batch from "../../model/teacher/batchModel.js";
 import Test from "../../model/test/test.js";
 import Material from "../../model/material/material.js";
+import Subject from "../../model/subject/subject.js";
 import type { StaffScope } from "../../utilis/ownerScope.js";
 import { escapeRegex } from "../../utilis/ownerScope.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
@@ -140,6 +141,8 @@ export class CourseService {
       throw statusError(`Delete or move its ${batches} ${label}${batches === 1 ? "" : "s"} first.`, HttpStatus.CONFLICT);
     }
     if (await Test.exists({ courseId: existing._id }) || await Material.exists({ courseId: existing._id })) throw statusError("Tests or study materials use this course. Mark it Inactive instead of deleting it.", HttpStatus.CONFLICT);
+    const subjects = await Subject.countDocuments({ courseId: existing._id });
+    if (subjects > 0) throw statusError(`Delete its ${subjects} subject${subjects === 1 ? "" : "s"} under Subjects first.`, HttpStatus.CONFLICT);
     await Course.deleteOne({ _id: existing._id });
     return { message: "Course deleted successfully", course: existing };
   }

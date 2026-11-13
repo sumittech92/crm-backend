@@ -16,6 +16,11 @@ import postRoutes from "./post/post.js";
 import galleryRoutes from "./gallery/gallery.js";
 import libraryRoutes from "./library/library.js";
 import reportRoutes from "./report/report.js";
+import sessionRoutes from "./session/session.js";
+import subjectRoutes from "./subject/subject.js";
+import timetableRoutes from "./timetable/timetable.js";
+import eventRoutes from "./event/event.js";
+import taskRoutes from "./task/task.js";
 
 const router = express.Router();
 
@@ -36,5 +41,10 @@ router.use("/post", postRoutes);
 router.use("/gallery", galleryRoutes);
 router.use("/library", libraryRoutes);
 router.use("/report", reportRoutes);
+router.use("/session", sessionRoutes);
+router.use("/subject", subjectRoutes);
+router.use("/timetable", timetableRoutes);
+router.use("/event", eventRoutes);
+router.use("/task", taskRoutes);
 
  export default router;

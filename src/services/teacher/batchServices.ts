@@ -6,6 +6,9 @@ import Teacher from "../../model/teacher/teacherInfo.js";
 import StudentDetailsModel from "../../model/students/studentInfo.js";
 import Test from "../../model/test/test.js";
 import Material from "../../model/material/material.js";
+import Subject from "../../model/subject/subject.js";
+import Period from "../../model/timetable/timetable.js";
+import Task from "../../model/task/task.js";
 import type { StaffScope } from "../../utilis/ownerScope.js";
 import { escapeRegex, parseDay } from "../../utilis/ownerScope.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
@@ -201,10 +204,15 @@ export class BatchService {
     if (existing.workType === "school" && moved && await this.studentCount(existing) > 0) {
       throw statusError("Students are in this section, so it cannot move to another class", HttpStatus.CONFLICT);
     }
+    if (existing.workType === "school" && moved && await Period.exists({ batchId: existing._id })) {
+      throw statusError("This section has periods on the timetable, so it cannot move to another class. Remove them first.", HttpStatus.CONFLICT);
+    }
     if (renamed || moved) await this.ensureUniqueName(next, existing._id);
     await this.ensureNoClash(next, existing._id);
     if (renamed) await this.renameOnStudents(existing, next.name);
     const saved = await Batch.findByIdAndUpdate(existing._id, { $set: update }, { new: true, runValidators: true }).lean();
+    // Subject teachers were set for the section in its old class.
+    if (moved) await Subject.updateMany({ "sections.batchId": existing._id }, { $pull: { sections: { batchId: existing._id } } });
     return (await this.present([saved]))[0];
   }
 
@@ -236,7 +244,12 @@ export class BatchService {
     }
     const tests = await Test.countDocuments({ batchIds: existing._id }) + await Material.countDocuments({ batchIds: existing._id });
     if (tests > 0) throw statusError(`${tests} test${tests === 1 ? " or material uses" : "s / materials use"} this ${existing.workType === "school" ? "section" : "batch"}. Mark it Inactive instead of deleting it.`, HttpStatus.CONFLICT);
+    const label = existing.workType === "school" ? "section" : "batch";
+    const periods = await Period.countDocuments({ batchId: existing._id });
+    if (periods > 0) throw statusError(`${periods} timetable period${periods === 1 ? " uses" : "s use"} this ${label}. Remove ${periods === 1 ? "it" : "them"} first, or mark the ${label} Inactive.`, HttpStatus.CONFLICT);
+    if (await Task.exists({ batchId: existing._id })) throw statusError(`Homework or assignments were given to this ${label}. Mark it Inactive instead of deleting it.`, HttpStatus.CONFLICT);
     await Batch.deleteOne({ _id: existing._id });
+    await Subject.updateMany({ "sections.batchId": existing._id }, { $pull: { sections: { batchId: existing._id } } });
     return { message: "Batch deleted successfully", batch: existing };
   }
 }
