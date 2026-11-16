@@ -16,6 +16,9 @@ const STUDENT_POPULATE = {
   select: "studentCode fullName workType schoolInfo coachingInfo parentsInfo studentId",
   populate: { path: "studentId", select: "countryCode phoneNumber" },
 };
+/** Student details plus the name of whoever recorded each payment (shown on receipts). */
+const FEE_POPULATE = [STUDENT_POPULATE, { path: "payments.collectedBy", select: "fullName" }];
+const collectorName = (payment: any): string | null => (payment?.collectedBy && typeof payment.collectedBy === "object" ? payment.collectedBy.fullName || null : null);
 
 const httpError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
 
@@ -49,8 +52,8 @@ export const presentFee = (fee: any) => {
     status: statusOf(fee),
     dueDate: fee.dueDate ? new Date(fee.dueDate).toISOString().slice(0, 10) : null,
     note: fee.note,
-    lastPayment: last ? { receiptNo: last.receiptNo, amount: last.amount, discount: last.discount, mode: last.mode, date: new Date(last.paidOn).toISOString().slice(0, 10), reference: last.reference } : null,
-    payments: payments.map((payment) => ({ id: payment._id, receiptNo: payment.receiptNo, amount: payment.amount, discount: payment.discount, mode: payment.mode, date: new Date(payment.paidOn).toISOString().slice(0, 10), reference: payment.reference, note: payment.note })),
+    lastPayment: last ? { receiptNo: last.receiptNo, amount: last.amount, discount: last.discount, mode: last.mode, date: new Date(last.paidOn).toISOString().slice(0, 10), reference: last.reference, receivedBy: collectorName(last) } : null,
+    payments: payments.map((payment) => ({ id: payment._id, receiptNo: payment.receiptNo, amount: payment.amount, discount: payment.discount, mode: payment.mode, date: new Date(payment.paidOn).toISOString().slice(0, 10), reference: payment.reference, note: payment.note, receivedBy: collectorName(payment) })),
     createdAt: fee.createdAt,
   };
 };
@@ -91,7 +94,7 @@ export class FeeService {
       }
       filter.student = { $in: await StudentDetailsModel.find(studentFilter).distinct("_id") };
     }
-    const fees = await FeeModel.find(filter).populate(STUDENT_POPULATE).sort({ updatedAt: -1 }).lean();
+    const fees = await FeeModel.find(filter).populate(FEE_POPULATE).sort({ updatedAt: -1 }).lean();
     const rows = fees.map(presentFee);
     return query.status ? rows.filter((row) => row.status === query.status) : rows;
   }
@@ -122,7 +125,7 @@ export class FeeService {
 
   static async getStudentFees(scope: StaffScope, studentCode: string) {
     const [student] = await this.studentsByCode(scope, [studentCode]);
-    const fees = await FeeModel.find({ student: student._id }).populate(STUDENT_POPULATE).sort({ createdAt: -1 }).lean();
+    const fees = await FeeModel.find({ student: student._id }).populate(FEE_POPULATE).sort({ createdAt: -1 }).lean();
     return fees.map(presentFee);
   }
 
@@ -144,7 +147,7 @@ export class FeeService {
       dueDate,
       note: input.note || null,
     })));
-    const fees = await FeeModel.find({ _id: { $in: created.map((fee) => fee._id) } }).populate(STUDENT_POPULATE).lean();
+    const fees = await FeeModel.find({ _id: { $in: created.map((fee) => fee._id) } }).populate(FEE_POPULATE).lean();
     return fees.map(presentFee);
   }
 
@@ -188,7 +191,7 @@ export class FeeService {
       await fee.save();
       savedIds.push(fee._id);
     }
-    const saved = await FeeModel.find({ _id: { $in: savedIds } }).populate(STUDENT_POPULATE).lean();
+    const saved = await FeeModel.find({ _id: { $in: savedIds } }).populate(FEE_POPULATE).lean();
     return saved.map(presentFee);
   }
 
@@ -202,7 +205,7 @@ export class FeeService {
     if (input.dueDate !== undefined) fee.dueDate = input.dueDate ? parseDay(input.dueDate, "due date") : null;
     if (input.note !== undefined) fee.note = input.note || null;
     await fee.save();
-    await fee.populate(STUDENT_POPULATE);
+    await fee.populate(FEE_POPULATE);
     return presentFee(fee.toObject());
   }
 
