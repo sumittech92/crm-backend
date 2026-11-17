@@ -12,6 +12,7 @@ import Course from "../../model/teacher/courseModel.js";
 import { BatchService } from "../teacher/batchServices.js";
 import { StaffActor, teacherSectionIds } from "../../utilis/staffAccess.js";
 import { todayKey } from "../../utilis/ownerScope.js";
+import { assertUniqueContact } from "../../utilis/uniqueContact.js";
 
 const statusError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
 
@@ -31,15 +32,7 @@ export class StudentInfoService {
     const countryCode = input.countryCode.trim();
     const phoneNumber = input.phoneNumber.trim();
 
-    const existingUser = await AuthModel.exists({
-      isDeleted: false,
-      $or: [{ email }, { countryCode, phoneNumber }],
-    });
-    if (existingUser) {
-      const error = new Error("Email or phone number already exists") as Error & { statusCode?: number };
-      error.statusCode = HttpStatus.CONFLICT;
-      throw error;
-    }
+    await assertUniqueContact({ email, countryCode, phoneNumber });
 
     const auth = await AuthModel.create({
       fullName: input.fullName.trim(),
@@ -129,24 +122,15 @@ export class StudentInfoService {
       if (input[field] !== undefined) accountUpdate[field] = field === "email" ? input[field].trim().toLowerCase() : input[field];
     }
     if (Object.keys(accountUpdate).length) {
-      const duplicateConditions = [];
-      if (accountUpdate.email) duplicateConditions.push({ email: accountUpdate.email });
       const nextCountryCode = accountUpdate.countryCode;
       const nextPhoneNumber = accountUpdate.phoneNumber;
-      if (nextCountryCode || nextPhoneNumber) {
-        const currentAuth = await AuthModel.findById(authId).select("countryCode phoneNumber").lean();
-        duplicateConditions.push({
-          countryCode: nextCountryCode ?? currentAuth?.countryCode,
-          phoneNumber: nextPhoneNumber ?? currentAuth?.phoneNumber,
-        });
-      }
-      if (duplicateConditions.length && await AuthModel.exists({
-        _id: { $ne: authId }, isDeleted: false, $or: duplicateConditions,
-      })) {
-        const error = new Error("Email or phone number already exists") as Error & { statusCode?: number };
-        error.statusCode = HttpStatus.CONFLICT;
-        throw error;
-      }
+      const currentAuth = nextCountryCode || nextPhoneNumber
+        ? await AuthModel.findById(authId).select("countryCode phoneNumber").lean() : null;
+      await assertUniqueContact({
+        email: accountUpdate.email,
+        countryCode: nextCountryCode ?? currentAuth?.countryCode,
+        phoneNumber: currentAuth ? nextPhoneNumber ?? currentAuth.phoneNumber : undefined,
+      }, authId);
       await AuthModel.updateOne({ _id: authId, role: "student", isDeleted: false }, { $set: accountUpdate });
     }
     const student = await StudentDetailsModel.findOneAndUpdate(

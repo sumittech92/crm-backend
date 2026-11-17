@@ -5,7 +5,8 @@ import { UPLOAD_ROOT } from './routes/upload/upload.js';
 
 const app = express();
 
-app.use(cors());
+// Browsers send an OPTIONS preflight before each call (custom accesstoken header); cache it so it isn't repeated every time.
+app.use(cors({ maxAge: 86400 }));
 app.use(express.json({ limit: '1mb' }));
 // Website images and videos uploaded by owners. nosniff stops browsers treating a file as another type.
 app.use('/uploads', express.static(UPLOAD_ROOT, { index: false, setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff') }));

@@ -5,6 +5,7 @@ import Teacher from "../../model/teacher/teacherInfo.js";
 import Subject from "../../model/subject/subject.js";
 import { AuthClass } from "../Auth/auth.js";
 import { generateSixDigitId } from "../../utilis/generateId.js";
+import { assertUniqueContact } from "../../utilis/uniqueContact.js";
 
 /** Limits an admin to records of their own work type that they created. Empty for super admins. */
 export type OwnerScope = { workType?: string; adminId?: unknown };
@@ -39,22 +40,7 @@ export class TeacherInfoService {
     }
 
     // 3. Check duplicate email or phone
-    const existingUser = await AuthModel.exists({
-      isDeleted: false,
-      $or: [
-        { email },
-        { countryCode, phoneNumber },
-      ],
-    });
-
-    if (existingUser) {
-      const error = new Error(
-        "Email or phone number already exists"
-      ) as Error & { statusCode?: number };
-
-      error.statusCode = HttpStatus.CONFLICT;
-      throw error;
-    }
+    await assertUniqueContact({ email, countryCode, phoneNumber });
 
     // 4. Create authentication user
     const auth = await AuthModel.create({
@@ -172,21 +158,12 @@ export class TeacherInfoService {
       if (input[field] !== undefined) accountUpdate[field] = field === "email" ? input[field].trim().toLowerCase() : input[field].trim();
     }
     if (Object.keys(accountUpdate).length) {
-      const duplicateConditions = [];
-      if (accountUpdate.email) duplicateConditions.push({ email: accountUpdate.email });
-      if (accountUpdate.countryCode || accountUpdate.phoneNumber) {
-        duplicateConditions.push({
-          countryCode: accountUpdate.countryCode ?? existingTeacher.countryCode,
-          phoneNumber: accountUpdate.phoneNumber ?? existingTeacher.phoneNumber,
-        });
-      }
-      if (duplicateConditions.length && await AuthModel.exists({
-        _id: { $ne: authId }, isDeleted: false, $or: duplicateConditions,
-      })) {
-        const error = new Error("Email or phone number already exists") as Error & { statusCode?: number };
-        error.statusCode = HttpStatus.CONFLICT;
-        throw error;
-      }
+      const phoneChanged = accountUpdate.countryCode || accountUpdate.phoneNumber;
+      await assertUniqueContact({
+        email: accountUpdate.email,
+        countryCode: accountUpdate.countryCode ?? existingTeacher.countryCode,
+        phoneNumber: phoneChanged ? accountUpdate.phoneNumber ?? existingTeacher.phoneNumber : undefined,
+      }, authId);
     }
 
     if (input.password) await AuthClass.resetPassword(authId, input.password);
