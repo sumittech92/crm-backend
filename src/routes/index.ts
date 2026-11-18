@@ -23,6 +23,8 @@ import eventRoutes from "./event/event.js";
 import taskRoutes from "./task/task.js";
 import portalRoutes from "./portal/portal.js";
 import syllabusRoutes from "./syllabus/syllabus.js";
+import salaryRoutes from "./salary/salary.js";
+import entranceRoutes from "./entrance/entrance.js";
 
 const router = express.Router();
 
@@ -50,5 +52,7 @@ router.use("/event", eventRoutes);
 router.use("/task", taskRoutes);
 router.use("/portal", portalRoutes);
 router.use("/syllabus", syllabusRoutes);
+router.use("/salary", salaryRoutes);
+router.use("/entrance", entranceRoutes);
 
  export default router;
