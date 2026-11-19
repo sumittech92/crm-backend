@@ -7,7 +7,7 @@ import StudentDetailsModel from "../../model/students/studentInfo.js";
 
 export const MAX_FAILED_LOGINS = 8;
 // Safe account fields for the Super Admin users page.
-const USER_LIST_FIELDS = "fullName email countryCode phoneNumber role workType instituteName siteSlug customDomain isBlocked failedLoginAttempts createdAt lastLogin";
+const USER_LIST_FIELDS = "fullName email countryCode phoneNumber role workType instituteName siteSlug customDomain isBlocked failedLoginAttempts createdAt lastLogin disabledModules isSuspended";
 // The demo websites keep these addresses; real owners never get them.
 const RESERVED_SITE_SLUGS = ["northstar-academy", "greenfield-school"];
 
@@ -122,6 +122,15 @@ export class AuthClass {
       .select(USER_LIST_FIELDS)
       .sort({ createdAt: -1 })
       .lean();
+  }
+
+  /** Super Admin: modules turned off for an owner's institute (their teachers follow it). */
+  static async setDisabledModules(userId: unknown, disabledModules: string[]) {
+    return AuthModel.findOneAndUpdate(
+      { _id: userId, isDeleted: false, role: "admin" },
+      { $set: { disabledModules: [...new Set(disabledModules)] } },
+      { new: true },
+    ).select(USER_LIST_FIELDS).lean();
   }
 
   /** Unblocking also clears the wrong-password count; blocking signs the account out. */

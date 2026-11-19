@@ -1,9 +1,10 @@
 import express from "express";
-import { forgotPassword, login, logout, createAdmin, createSuperAdmin, register, resetPassword, verifyOtp, changePassword, listUsers, setUserBlocked, getMySite, setUserDomain } from "../../controller/auth.js";
+import { forgotPassword, login, logout, createAdmin, createSuperAdmin, register, resetPassword, verifyOtp, changePassword, listUsers, setUserBlocked, getMySite, setUserDomain, setUserModules, getMyModules } from "../../controller/auth.js";
 import { verifyAuthToken, requireSuperAdmin } from "../../middleware/authMiddleware.js";
 import {
   validateForgotPassword,
   validateLogin,
+  validateModules,
   validateRegister,
   validateResetPassword,
   validateOtp,
@@ -27,6 +28,8 @@ router.get("/site", verifyAuthToken, getMySite);
 router.get("/users", verifyAuthToken, requireSuperAdmin, listUsers);
 router.patch("/users/:userId/block", verifyAuthToken, requireSuperAdmin, validateBlockUser, setUserBlocked);
 router.patch("/users/:userId/domain", verifyAuthToken, requireSuperAdmin, validateDomain, setUserDomain);
+router.patch("/users/:userId/modules", verifyAuthToken, requireSuperAdmin, validateModules, setUserModules);
+router.get("/modules", verifyAuthToken, getMyModules);
 
 export default router;
 

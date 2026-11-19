@@ -6,6 +6,7 @@ import { sendErrorResponse, sendSuccessResponse } from "../utilis/response.js";
 import { SampleDataService } from "../services/sample/sampleData.js";
 import HttpStatus from "http-status-codes";
 import { isValidDomain, normalizeDomain } from "../utilis/domain.js";
+import { SUSPENDED_MESSAGE, instituteAccessFor } from "../utilis/moduleAccess.js";
 
 const allowedRoles = ["superAdmin", "admin", "teacher", "student", "parent"];
 
@@ -94,6 +95,8 @@ export const login = async (req, res) => {
     if (!allowedRoles.includes(user.role)) {
       return sendErrorResponse(res, "Invalid user role", HttpStatus.FORBIDDEN);
     }
+    const access = await instituteAccessFor(user);
+    if (access.suspended) return sendErrorResponse(res, SUSPENDED_MESSAGE, HttpStatus.FORBIDDEN);
     if (!process.env.SECRET_KEY) {
       return sendErrorResponse(res, "Authentication is not configured", HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -104,7 +107,7 @@ export const login = async (req, res) => {
       { expiresIn: "1d" },
     );
     await AuthClass.updateAccessToken(user._id, accessToken);
-    const safeUser = { ...user, workType: await AuthClass.resolveWorkType(user), siteSlug: await AuthClass.ensureSiteSlug(user), failedLoginAttempts: 0 };
+    const safeUser = { ...user, workType: await AuthClass.resolveWorkType(user), siteSlug: await AuthClass.ensureSiteSlug(user), failedLoginAttempts: 0, disabledModules: access.disabledModules };
     delete safeUser.password;
     delete safeUser.accessToken;
     return sendSuccessResponse(res, "Login successful", { user: safeUser, accessToken });
@@ -284,6 +287,31 @@ export const setUserDomain = async (req, res) => {
       return sendErrorResponse(res, "This domain is already used by another institute", HttpStatus.CONFLICT);
     }
     console.error("User domain error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};
+
+/** Super Admin: turn modules off / on for an owner's institute. */
+export const setUserModules = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return sendErrorResponse(res, "Invalid user ID", HttpStatus.BAD_REQUEST);
+    }
+    const user = await AuthClass.setDisabledModules(req.params.userId, req.body.disabledModules);
+    if (!user) return sendErrorResponse(res, "Owner not found", HttpStatus.NOT_FOUND);
+    return sendSuccessResponse(res, "Module access saved", user);
+  } catch (error) {
+    console.error("User modules error:", error);
+    return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+};
+
+/** The signed-in user's turned-off modules, so open sessions pick up Super Admin changes without signing in again. */
+export const getMyModules = async (req, res) => {
+  try {
+    return sendSuccessResponse(res, "Modules retrieved successfully", { disabledModules: (await instituteAccessFor(req.userData)).disabledModules });
+  } catch (error) {
+    console.error("My modules error:", error);
     return sendErrorResponse(res, "Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
   }
 };

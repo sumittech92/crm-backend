@@ -1,6 +1,7 @@
 ﻿import Joi from "joi";
 import HttpStatus from "http-status-codes";
 import { sendErrorResponse } from "../utilis/response.js";
+import { MODULE_KEYS } from "../utilis/moduleAccess.js";
 
 export const registerSchema = Joi.object({
   fullName: Joi.string().trim().required(),
@@ -83,3 +84,8 @@ export const validateDomain = validate(domainSchema);
 
 
 
+
+export const modulesSchema = Joi.object({
+  disabledModules: Joi.array().items(Joi.string().valid(...MODULE_KEYS)).max(MODULE_KEYS.length).required(),
+}).required();
+export const validateModules = validate(modulesSchema);

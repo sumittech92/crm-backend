@@ -7,6 +7,8 @@ export interface AuthDocument extends mongoose.Document {
   fullName: string | null; email: string | null; password: string | null; countryCode: string | null; phoneNumber: string | null;
   role: UserRole | null; workType: "school" | "coaching" | null; deviceToken: string | null; accessToken: string | null; isDeleted: boolean; isBlocked: boolean; failedLoginAttempts: number; lastLogin: number;
   instituteName: string | null; siteSlug: string | null; customDomain: string | null;
+  disabledModules: string[];
+  isSuspended: boolean;
   otpHash?: string | null; otpExpiresAt?: Date | null; otpVerifiedAt?: Date | null;
 }
 
@@ -29,6 +31,10 @@ const authSchema = new mongoose.Schema({
   siteSlug: { type: String, default: null },
   // Set by the Super Admin: visiting this domain opens the owner's website at "/".
   customDomain: { type: String, default: null },
+  // Owners only: modules the Super Admin turned off for this institute (empty = everything on). Teachers follow their owner.
+  disabledModules: { type: [String], default: [] },
+  // Owners only: workspace deactivated by the Super Admin (owner, teachers and students can't use it).
+  isSuspended: { type: Boolean, default: false },
   lastLogin: { type: Number, default: () => Date.now() },
   otpHash: { type: String, default: null, select: false },
   otpExpiresAt: { type: Date, default: null, select: false },

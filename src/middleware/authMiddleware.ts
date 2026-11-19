@@ -1,6 +1,7 @@
 
 import jwt from "jsonwebtoken";
 import AuthModel from "../model/Auth/auth.js";
+import { MODULE_LABELS, SUSPENDED_MESSAGE, instituteAccessFor, moduleForPath } from "../utilis/moduleAccess.js";
 
 export const verifyAuthToken = async (req, res, next) => {
   try {
@@ -43,6 +44,23 @@ export const verifyAuthToken = async (req, res, next) => {
     req.tokenData = decoded;
     req.userData = user;
     req.role = decoded.role;
+
+    // Modules the Super Admin turned off for this institute can't be used by its owner or teachers.
+    if (["admin", "teacher", "student"].includes(decoded.role)) {
+      const access = await instituteAccessFor(user);
+      // A workspace deactivated by the Super Admin can't be used by its owner, teachers or students (signing out still works).
+      if (access.suspended && !req.originalUrl.endsWith("/auth/logout")) {
+        return res.status(403).json({ auth: false, message: SUSPENDED_MESSAGE });
+      }
+      // Modules the Super Admin turned off can't be used by the owner or teachers. Website reads stay open: the panel loads the logo and name from it.
+      const module = decoded.role !== "student" ? moduleForPath(req.baseUrl) : undefined;
+      if (module && !(module === "website" && req.method === "GET") && access.disabledModules.includes(module)) {
+        return res.status(403).json({
+          auth: true,
+          message: `${MODULE_LABELS[module]} is not enabled for your institute. Contact EduNexa support to turn it on.`,
+        });
+      }
+    }
 
     next();
   } catch (error) {

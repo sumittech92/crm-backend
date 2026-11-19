@@ -25,6 +25,8 @@ import portalRoutes from "./portal/portal.js";
 import syllabusRoutes from "./syllabus/syllabus.js";
 import salaryRoutes from "./salary/salary.js";
 import entranceRoutes from "./entrance/entrance.js";
+import labRoutes from "./lab/lab.js";
+import platformRoutes from "./platform/platform.js";
 
 const router = express.Router();
 
@@ -54,5 +56,7 @@ router.use("/portal", portalRoutes);
 router.use("/syllabus", syllabusRoutes);
 router.use("/salary", salaryRoutes);
 router.use("/entrance", entranceRoutes);
+router.use("/lab", labRoutes);
+router.use("/platform", platformRoutes);
 
  export default router;
