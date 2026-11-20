@@ -8,7 +8,7 @@ import StudentDetailsModel from "../model/students/studentInfo.js";
  */
 export const MODULE_KEYS = [
   "admissions", "attendance", "fees", "exams", "homework", "timetable", "syllabus", "library", "labs",
-  "salary", "entrance", "notices", "events", "posts", "gallery", "materials", "website", "reports",
+  "salary", "entrance", "notices", "events", "posts", "gallery", "materials", "website", "reports", "onlineClasses", "mockPapers",
 ] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
@@ -17,12 +17,14 @@ const ROUTE_MODULES: Record<string, ModuleKey> = {
   admission: "admissions", attendance: "attendance", fee: "fees", test: "exams", task: "homework", timetable: "timetable",
   syllabus: "syllabus", library: "library", lab: "labs", salary: "salary", entrance: "entrance", notice: "notices",
   event: "events", post: "posts", gallery: "gallery", material: "materials", website: "website", report: "reports",
+  "online-class": "onlineClasses", "mock-paper": "mockPapers",
 };
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   admissions: "Admissions", attendance: "Attendance", fees: "Fees", exams: "Exams & results", homework: "Homework & assignments",
   timetable: "Timetable", syllabus: "Syllabus", library: "Library", labs: "Labs", salary: "Teacher salary", entrance: "Entrance tests",
   notices: "Notices", events: "Events", posts: "Posts", gallery: "Gallery", materials: "Study materials", website: "Website", reports: "Reports",
+  onlineClasses: "Online classes", mockPapers: "Mock papers",
 };
 
 export const moduleForPath = (baseUrl: string): ModuleKey | undefined => ROUTE_MODULES[String(baseUrl || "").split("/").filter(Boolean).pop() || ""];

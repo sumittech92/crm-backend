@@ -1,11 +1,11 @@
 import Joi from "joi";
-import { primaryClasses } from "../model/entrance/entrance.js";
 import { validateWith } from "../utilis/records.js";
 
 const time = Joi.string().trim().pattern(/^([01]\d|2[0-3]):[0-5]\d$/).allow("", null).optional().messages({ "string.pattern.base": "Time must be HH:mm (24-hour)" });
 const fields = Joi.object({
   name: Joi.string().trim().max(100).required(),
-  className: Joi.string().valid(...primaryClasses).required().messages({ "any.only": "Entrance tests are only for Nursery to Class 5" }),
+  // Schools are limited to primary classes in the service; coaching uses its course names.
+  className: Joi.string().trim().max(80).required(),
   date: Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({ "string.pattern.base": "Date must be YYYY-MM-DD" }),
   startTime: time,
   endTime: time,
@@ -20,6 +20,7 @@ export const validateCreateEntrance = validateWith(fields.required());
 export const validateUpdateEntrance = validateWith(fields.fork(["name", "className", "date", "maxMarks", "passMarks"], (schema) => schema.optional()).min(1));
 export const validateEntranceCandidates = validateWith(Joi.object({
   candidates: Joi.array().max(500).items(Joi.object({
+    rollNo: Joi.string().trim().max(30).allow("", null).optional(),
     enquiryCode: Joi.string().trim().pattern(/^\d{6}$/).allow("", null).optional(),
     studentName: Joi.string().trim().max(80).required(),
     parentName: Joi.string().trim().max(80).allow("", null).optional(),

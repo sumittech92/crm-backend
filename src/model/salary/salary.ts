@@ -53,6 +53,36 @@ const salarySchema = new Schema<SalaryDocument>(
 // One salary per teacher per month.
 salarySchema.index({ adminId: 1, teacher: 1, month: 1 }, { unique: true });
 
+/** A teacher's regular monthly pay, used when the month's salaries are generated. */
+export interface SalaryStructureDocument extends Document {
+    adminId: Types.ObjectId;
+    teacher: Types.ObjectId;
+    teacherCode: string;
+    basic: number;
+    allowances: number;
+    deductions: number;
+    // How the teacher is usually paid, and where (account / UPI), shown when marking salaries paid.
+    mode: (typeof salaryModes)[number];
+    account: string | null;
+}
+
+const structureSchema = new Schema<SalaryStructureDocument>(
+    {
+        adminId: { type: Schema.Types.ObjectId, ref: "Auth", required: true, index: true },
+        teacher: { type: Schema.Types.ObjectId, ref: "Teacher", required: true },
+        teacherCode: { type: String, required: true },
+        basic: money,
+        allowances: money,
+        deductions: money,
+        mode: { type: String, enum: salaryModes, default: "bank" },
+        account: { type: String, default: null, trim: true },
+    },
+    { timestamps: true, versionKey: false, collection: "SalaryStructures" }
+);
+structureSchema.index({ adminId: 1, teacher: 1 }, { unique: true });
+
+export const SalaryStructure = mongoose.model<SalaryStructureDocument>("SalaryStructure", structureSchema);
+
 const Salary = mongoose.model<SalaryDocument>("Salary", salarySchema);
 
 export default Salary;

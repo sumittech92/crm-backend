@@ -58,7 +58,7 @@ export class PortalService {
   }
 
   /** The student's sections / batches (with class / course name) and their course ids. */
-  private static async groups(student: Record<string, any>) {
+  static async groups(student: Record<string, any>) {
     const batches = await Batch.find({ adminId: student.adminId, workType: student.workType }).lean();
     const courses = await Course.find({ adminId: student.adminId }).select("name subjects").lean();
     const courseById = new Map(courses.map(course => [String(course._id), course]));

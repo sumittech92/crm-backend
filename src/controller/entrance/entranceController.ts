@@ -4,17 +4,17 @@ import { EntranceService } from "../../services/entrance/entrance.js";
 import { resolveOwnerScope } from "../../utilis/ownerScope.js";
 import { handleError } from "../../utilis/records.js";
 
-/** Entrance tests are for school owners only. */
+/** Entrance tests are managed by the owner (school or coaching). */
 const schoolOwner = (req, res) => {
   if (req.role !== "admin") { sendErrorResponse(res, "Only an Owner can manage entrance tests", HttpStatus.FORBIDDEN); return false; }
-  if (req.userData.workType !== "school") { sendErrorResponse(res, "Entrance tests are only available for schools", HttpStatus.FORBIDDEN); return false; }
+  if (!req.userData.workType) { sendErrorResponse(res, "Admin work type is not configured", HttpStatus.FORBIDDEN); return false; }
   return true;
 };
 
 export const createEntrance = async (req, res) => {
   try {
     if (!schoolOwner(req, res)) return;
-    return sendSuccessResponse(res, "Entrance test created successfully", await EntranceService.create(req.body, req.userData._id), HttpStatus.CREATED);
+    return sendSuccessResponse(res, "Entrance test created successfully", await EntranceService.create(req.body, req.userData.workType, req.userData._id), HttpStatus.CREATED);
   } catch (error) { return handleError(res, error, "Entrance test creation error"); }
 };
 

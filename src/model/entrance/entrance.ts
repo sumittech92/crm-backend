@@ -5,6 +5,8 @@ export const primaryClasses = ["Nursery", "LKG", "UKG", "Class 1", "Class 2", "C
 
 export interface EntranceCandidate {
     _id?: Types.ObjectId;
+    // e.g. "E-482913-007": printed on the admit slip, kept when the list is saved again.
+    rollNo: string;
     // Admission enquiry the applicant came from, when picked from Admissions.
     enquiryCode: string | null;
     studentName: string;
@@ -16,15 +18,16 @@ export interface EntranceCandidate {
 }
 
 /**
- * School admission entrance test for new applicants to primary classes.
+ * Admission entrance test. Schools: new applicants to primary classes (Nursery – Class 5). Coaching: any course (entrance / scholarship test).
  * Status comes from the date: scheduled → completed, or cancelled. A candidate's result comes from marks vs pass marks.
  */
 export interface EntranceDocument extends Document {
     entranceCode: string;
-    workType: "school";
+    workType: "school" | "coaching";
     adminId: Types.ObjectId;
     name: string;
-    className: (typeof primaryClasses)[number];
+    // School: one of primaryClasses. Coaching: the course name.
+    className: string;
     date: Date;
     startTime: string | null;
     endTime: string | null;
@@ -40,6 +43,7 @@ const time = { type: String, default: null, match: /^([01]\d|2[0-3]):[0-5]\d$/ }
 
 const candidateSchema = new Schema<EntranceCandidate>(
     {
+        rollNo: { type: String, required: true },
         enquiryCode: { type: String, default: null },
         studentName: { type: String, required: true, trim: true },
         parentName: { type: String, default: null, trim: true },
@@ -53,10 +57,10 @@ const candidateSchema = new Schema<EntranceCandidate>(
 const entranceSchema = new Schema<EntranceDocument>(
     {
         entranceCode: { type: String, required: true, match: /^\d{6}$/, unique: true },
-        workType: { type: String, enum: ["school"], required: true },
+        workType: { type: String, enum: ["school", "coaching"], required: true },
         adminId: { type: Schema.Types.ObjectId, ref: "Auth", required: true, index: true },
         name: { type: String, required: true, trim: true },
-        className: { type: String, enum: primaryClasses, required: true },
+        className: { type: String, required: true, trim: true },
         date: { type: Date, required: true },
         startTime: time,
         endTime: time,

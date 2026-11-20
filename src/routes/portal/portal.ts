@@ -3,6 +3,7 @@ import * as portal from "../../controller/portal/portalController.js";
 import { verifyAuthToken } from "../../middleware/authMiddleware.js";
 import { validateFeeSubmission, validateTaskSubmission } from "../../validation/portal.js";
 import { validateOptionalSubjects } from "../../validation/test.js";
+import { validateGeneratePaper } from "../../validation/mockPaper.js";
 
 const router = express.Router();
 
@@ -27,6 +28,12 @@ router.get("/notices", ...guard, portal.getNotices);
 router.get("/updates", ...guard, portal.getUpdates);
 router.get("/tasks", ...guard, portal.getTasks);
 router.get("/syllabus", ...guard, portal.getSyllabus);
+router.get("/online-classes", ...guard, portal.getOnlineClasses);
+router.post("/online-classes/:classCode/join", ...guard, portal.joinOnlineClass);
+router.get("/mock-papers/options", ...guard, portal.getPaperOptions);
+router.get("/mock-papers", ...guard, portal.getPapers);
+router.post("/mock-papers/generate", ...guard, validateGeneratePaper, portal.generatePaper);
+router.post("/mock-papers/:paperCode/download", ...guard, portal.downloadPaper);
 router.post("/tasks/:taskCode/submission", ...guard, validateTaskSubmission, portal.submitTask);
 
 export default router;

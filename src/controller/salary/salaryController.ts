@@ -44,3 +44,24 @@ export const generateSalaries = async (req, res) => {
     return sendSuccessResponse(res, "Salaries generated successfully", await SalaryService.generate(req.body.month, req.userData.workType, req.userData._id));
   } catch (error) { return handleError(res, error, "Salary generation error"); }
 };
+
+export const getStructures = async (req, res) => {
+  try {
+    if (!ownerOnly(req, res)) return;
+    return sendSuccessResponse(res, "Salary setup retrieved successfully", await SalaryService.structures(req.userData.workType, req.userData._id));
+  } catch (error) { return handleError(res, error, "Salary setup list error"); }
+};
+
+export const saveStructure = async (req, res) => {
+  try {
+    if (!ownerOnly(req, res)) return;
+    return sendSuccessResponse(res, "Salary setup saved successfully", await SalaryService.saveStructure(req.params.teacherCode, req.body, req.userData.workType, req.userData._id));
+  } catch (error) { return handleError(res, error, "Salary setup save error"); }
+};
+
+export const payAllSalaries = async (req, res) => {
+  try {
+    if (!ownerOnly(req, res)) return;
+    return sendSuccessResponse(res, "Salaries marked as paid", await SalaryService.payAll(req.body, await resolveOwnerScope(req)));
+  } catch (error) { return handleError(res, error, "Salary pay-all error"); }
+};

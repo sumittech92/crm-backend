@@ -22,3 +22,17 @@ export const validateUpdateSalary = validateWith(fields.fork(["teacherCode", "mo
 export const validateGenerateSalary = validateWith(Joi.object({
   month: Joi.string().trim().pattern(/^\d{4}-(0[1-9]|1[0-2])$/).required().messages({ "string.pattern.base": "Month must be YYYY-MM" }),
 }).required());
+
+export const validateSalaryStructure = validateWith(Joi.object({
+  basic: amount.required(),
+  allowances: amount.optional(),
+  deductions: amount.optional(),
+  mode: Joi.string().valid(...salaryModes).optional(),
+  account: Joi.string().trim().max(80).allow("", null).optional(),
+}).required());
+export const validatePayAll = validateWith(Joi.object({
+  month: Joi.string().trim().pattern(/^\d{4}-(0[1-9]|1[0-2])$/).required().messages({ "string.pattern.base": "Month must be YYYY-MM" }),
+  mode: Joi.string().valid(...salaryModes).required(),
+  paidOn: Joi.string().trim().pattern(/^\d{4}-\d{2}-\d{2}$/).required().messages({ "string.pattern.base": "Paid on must be YYYY-MM-DD" }),
+  reference: Joi.string().trim().max(100).allow("", null).optional(),
+}).required());

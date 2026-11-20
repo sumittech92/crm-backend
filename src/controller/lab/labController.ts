@@ -12,6 +12,8 @@ const ownerOnly = (req, res) => {
 const run = (label: string, message: string, work: (req) => Promise<unknown>, { owner = true, status = HttpStatus.OK } = {}) => async (req, res) => {
   try {
     if (owner && !ownerOnly(req, res)) return;
+    // Labs are a school module.
+    if ((await resolveOwnerScope(req)).workType === "coaching") return sendErrorResponse(res, "Labs are only available for schools", HttpStatus.FORBIDDEN);
     return sendSuccessResponse(res, message, await work(req), status);
   } catch (error) { return handleError(res, error, label); }
 };

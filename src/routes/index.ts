@@ -27,6 +27,8 @@ import salaryRoutes from "./salary/salary.js";
 import entranceRoutes from "./entrance/entrance.js";
 import labRoutes from "./lab/lab.js";
 import platformRoutes from "./platform/platform.js";
+import mockPaperRoutes from "./mockPaper/mockPaper.js";
+import onlineClassRoutes from "./onlineClass/onlineClass.js";
 
 const router = express.Router();
 
@@ -58,5 +60,7 @@ router.use("/salary", salaryRoutes);
 router.use("/entrance", entranceRoutes);
 router.use("/lab", labRoutes);
 router.use("/platform", platformRoutes);
+router.use("/mock-paper", mockPaperRoutes);
+router.use("/online-class", onlineClassRoutes);
 
  export default router;

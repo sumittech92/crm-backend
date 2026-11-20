@@ -1,5 +1,5 @@
 import HttpStatus from "http-status-codes";
-import EntranceTest from "../../model/entrance/entrance.js";
+import EntranceTest, { primaryClasses } from "../../model/entrance/entrance.js";
 import Admission, { openEnquiryStatuses } from "../../model/admission/admission.js";
 import type { StaffScope } from "../../utilis/ownerScope.js";
 import { parseDay, todayKey } from "../../utilis/ownerScope.js";
@@ -17,19 +17,29 @@ export class EntranceService {
     return new Date(test.date).toISOString().slice(0, 10) < todayKey() ? "completed" : "scheduled";
   }
 
+  /** Adds each candidate's result and rank (by marks, ties share a rank) and the test totals. */
   private static present(test: Record<string, any>) {
+    const marked = (test.candidates || []).filter(candidate => candidate.marks != null).map(candidate => candidate.marks as number).sort((a, b) => b - a);
     const candidates = (test.candidates || []).map(candidate => ({
       ...candidate,
       result: (candidate.marks == null ? "pending" : candidate.marks >= test.passMarks ? "qualified" : "notQualified") as CandidateResult,
+      rank: candidate.marks == null ? null : marked.indexOf(candidate.marks) + 1,
     }));
+    const scores = candidates.filter(candidate => candidate.marks != null).map(candidate => candidate.marks as number);
     return {
       ...test, candidates, status: this.statusOf(test),
       qualified: candidates.filter(candidate => candidate.result === "qualified").length,
+      marked: scores.length,
+      topScore: scores.length ? Math.max(...scores) : null,
+      averageScore: scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length * 10) / 10 : null,
     };
   }
 
-  private static prepare(input: Record<string, any>, current: Record<string, any> = {}) {
+  private static prepare(input: Record<string, any>, current: Record<string, any> = {}, workType: string = current.workType) {
     const data: Record<string, any> = {};
+    if (input.className !== undefined && workType === "school" && !(primaryClasses as readonly string[]).includes(input.className)) {
+      throw statusError("School entrance tests are only for Nursery to Class 5", HttpStatus.BAD_REQUEST);
+    }
     for (const field of FIELDS) if (input[field] !== undefined) data[field] = blankToNull(input[field]);
     if (input.date !== undefined) data.date = parseDay(input.date, "test date");
     const maxMarks = data.maxMarks ?? current.maxMarks, passMarks = data.passMarks ?? current.passMarks;
@@ -50,8 +60,8 @@ export class EntranceService {
     });
   }
 
-  static async create(input: Record<string, any>, adminId: unknown) {
-    const created = await insertWithCode(EntranceTest, "entranceCode", { ...this.prepare(input), adminId, workType: "school" });
+  static async create(input: Record<string, any>, workType: string, adminId: unknown) {
+    const created = await insertWithCode(EntranceTest, "entranceCode", { ...this.prepare(input, {}, workType), adminId, workType });
     return this.present(created.toObject());
   }
 
@@ -74,7 +84,13 @@ export class EntranceService {
     }
     const codes = candidates.map(candidate => candidate.enquiryCode).filter(Boolean);
     if (new Set(codes).size !== codes.length) throw statusError("An applicant is added twice", HttpStatus.BAD_REQUEST);
+    // Keep roll numbers already given; new candidates get the next free one ("E-<test code>-001").
+    const used = new Set(candidates.map(candidate => candidate.rollNo).filter(Boolean));
+    if (used.size !== candidates.filter(candidate => candidate.rollNo).length) throw statusError("Two candidates have the same roll number", HttpStatus.BAD_REQUEST);
+    let next = 1;
+    const nextRoll = () => { let roll; do { roll = `E-${existing.entranceCode}-${String(next++).padStart(3, "0")}`; } while (used.has(roll)); used.add(roll); return roll; };
     const clean = candidates.map(candidate => ({
+      rollNo: candidate.rollNo || nextRoll(),
       enquiryCode: blankToNull(candidate.enquiryCode), studentName: candidate.studentName, parentName: blankToNull(candidate.parentName),
       phoneNumber: blankToNull(candidate.phoneNumber), marks: candidate.marks ?? null, remarks: blankToNull(candidate.remarks),
     }));
