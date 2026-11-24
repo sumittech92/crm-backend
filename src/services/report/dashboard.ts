@@ -40,11 +40,14 @@ export class DashboardService {
     const monthStart = parseDay(`${todayKey().slice(0, 7)}-01`);
     const weekStart = new Date(today.getTime() - 6 * DAY);
     const base = { adminId: scope.adminId, workType: scope.workType };
-    const [students, fees, attendance, enquiries, teachers, tests, posts, notices, courses, batches] = await Promise.all([
+    const [students, fees, attendance, enquiries, latestEnquiries, teachers, tests, posts, notices, courses, batches] = await Promise.all([
       StudentDetailsModel.find(base).select("studentCode fullName workType coachingInfo schoolInfo createdAt").lean(),
       FeeModel.find(base).populate("student", "studentCode fullName").lean(),
       AttendanceModel.find({ ...base, date: { $gte: weekStart, $lt: tomorrow } }).select("student date status").lean(),
       Admission.find({ adminId: scope.adminId }).select("status followUpDate enquiryDate").lean(),
+      // Newest enquiries (website form, phone, walk-in…) for the dashboard table.
+      Admission.find({ adminId: scope.adminId }).sort({ enquiryDate: -1, createdAt: -1 }).limit(6)
+        .select("enquiryCode studentName parentName countryCode phoneNumber className message source status enquiryDate").lean(),
       Teacher.countDocuments({ adminId: scope.adminId }),
       Test.find({ ...base, cancelled: false }).lean(),
       Post.find({ adminId: scope.adminId, status: "published" }).sort({ publishDate: -1 }).limit(2).lean(),
@@ -115,6 +118,11 @@ export class DashboardService {
       attendanceToday: { marked: todays.length, present: todays.filter(record => came(record.status)).length, percent: pct(todays.filter(record => came(record.status)).length, todays.length) },
       fees: { today: todayCollection, month: monthCollection, pending: pendingTotal, pendingStudents: pendingStudents.size, monthRate: pct(monthCollection, monthCollection + pendingTotal) },
       enquiries: { new: enquiries.filter(item => item.status === "new").length, followUpsDue: enquiries.filter(item => ["new", "contacted", "interested"].includes(item.status) && item.followUpDate && dayKey(item.followUpDate) <= todayKey()).length, thisMonth: enquiries.filter(item => new Date(item.enquiryDate) >= monthStart).length },
+      recentEnquiries: latestEnquiries.map(item => ({
+        enquiryCode: item.enquiryCode, studentName: item.studentName, parentName: item.parentName ?? null,
+        phone: `${item.countryCode} ${item.phoneNumber}`, className: item.className ?? null, message: item.message ?? null,
+        source: item.source, status: item.status, date: item.enquiryDate,
+      })),
       recentAdmissions: [...students].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3).map(student => {
         const { course } = studentPlacement(student);
         return { name: student.fullName || "Student", course, time: short(student.createdAt), initials: initials(student.fullName || "S") };
