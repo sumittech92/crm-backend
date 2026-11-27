@@ -8,7 +8,7 @@ import { generateSixDigitId } from "../../utilis/generateId.js";
 
 const statusError = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
 const blankToNull = (value: unknown) => typeof value === "string" && !value.trim() ? null : value;
-const ENQUIRY_FIELDS = ["studentName", "parentName", "countryCode", "phoneNumber", "email", "className", "previousSchool", "message", "source", "status", "enquiryDate", "followUpDate"];
+const ENQUIRY_FIELDS = ["studentName", "parentName", "countryCode", "phoneNumber", "email", "className", "previousSchool", "address", "message", "source", "status", "enquiryDate", "followUpDate"];
 
 export class AdmissionService {
 
@@ -32,6 +32,8 @@ export class AdmissionService {
     const fields = {
       studentName: input.studentName, parentName: input.parentName, email: blankToNull(input.email),
       className: input.className, message: blankToNull(input.message),
+      // A repeat enquiry without an address keeps the one already on file.
+      ...(blankToNull(input.address) ? { address: input.address } : {}),
     };
     const open = await Admission.findOneAndUpdate(
       { adminId: owner._id, countryCode: input.countryCode, phoneNumber: input.phoneNumber, status: { $in: openEnquiryStatuses } },

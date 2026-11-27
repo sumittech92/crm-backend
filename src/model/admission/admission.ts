@@ -16,6 +16,7 @@ export interface AdmissionDocument extends mongoose.Document {
     email: string | null;
     className: string | null;
     previousSchool: string | null;
+    address: string | null;
     message: string | null;
     source: (typeof enquirySources)[number];
     status: (typeof enquiryStatuses)[number];
@@ -37,6 +38,8 @@ const admissionSchema = new mongoose.Schema<AdmissionDocument>(
         // Coaching: course / class; school: class applying for.
         className: { type: String, default: null, trim: true },
         previousSchool: { type: String, default: null, trim: true },
+        // Home address (optional; the website form and the office both can fill it).
+        address: { type: String, default: null, trim: true },
         message: { type: String, default: null, trim: true },
         source: { type: String, enum: enquirySources, default: "website" },
         status: { type: String, enum: enquiryStatuses, default: "new" },

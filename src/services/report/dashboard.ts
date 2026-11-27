@@ -47,7 +47,7 @@ export class DashboardService {
       Admission.find({ adminId: scope.adminId }).select("status followUpDate enquiryDate").lean(),
       // Newest enquiries (website form, phone, walk-in…) for the dashboard table.
       Admission.find({ adminId: scope.adminId }).sort({ enquiryDate: -1, createdAt: -1 }).limit(6)
-        .select("enquiryCode studentName parentName countryCode phoneNumber className message source status enquiryDate").lean(),
+        .select("enquiryCode studentName parentName countryCode phoneNumber className address message source status enquiryDate").lean(),
       Teacher.countDocuments({ adminId: scope.adminId }),
       Test.find({ ...base, cancelled: false }).lean(),
       Post.find({ adminId: scope.adminId, status: "published" }).sort({ publishDate: -1 }).limit(2).lean(),
@@ -120,7 +120,7 @@ export class DashboardService {
       enquiries: { new: enquiries.filter(item => item.status === "new").length, followUpsDue: enquiries.filter(item => ["new", "contacted", "interested"].includes(item.status) && item.followUpDate && dayKey(item.followUpDate) <= todayKey()).length, thisMonth: enquiries.filter(item => new Date(item.enquiryDate) >= monthStart).length },
       recentEnquiries: latestEnquiries.map(item => ({
         enquiryCode: item.enquiryCode, studentName: item.studentName, parentName: item.parentName ?? null,
-        phone: `${item.countryCode} ${item.phoneNumber}`, className: item.className ?? null, message: item.message ?? null,
+        phone: `${item.countryCode} ${item.phoneNumber}`, className: item.className ?? null, address: item.address ?? null, message: item.message ?? null,
         source: item.source, status: item.status, date: item.enquiryDate,
       })),
       recentAdmissions: [...students].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3).map(student => {

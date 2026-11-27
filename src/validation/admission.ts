@@ -13,6 +13,7 @@ const enquiryFieldsSchema = Joi.object({
   email: Joi.string().trim().email().allow("", null).optional(),
   className: optionalText(60),
   previousSchool: optionalText(100),
+  address: optionalText(250),
   message: optionalText(1000),
   source: Joi.string().valid(...enquirySources).optional(),
   status: Joi.string().valid(...enquiryStatuses).optional(),
@@ -35,6 +36,7 @@ const publicEnquirySchema = Joi.object({
   phoneNumber: Joi.string().trim().pattern(/^[6-9]\d{9}$/).required().messages({ "string.pattern.base": "Mobile number must be a valid 10-digit mobile number" }),
   email: Joi.string().trim().email().allow("", null).optional(),
   className: Joi.string().trim().max(60).required(),
+  address: optionalText(250),
   message: optionalText(500),
 }).required();
 
